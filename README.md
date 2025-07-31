@@ -241,14 +241,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) - WhatsApp Web API library
 - [otto](https://github.com/robertkrimen/otto) - JavaScript VM (if used)
-
-## 📞 Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review the [SETUP.md](SETUP.md) documentation
-3. Open an issue on GitHub
+en an issue on GitHub
 
 ---
 
