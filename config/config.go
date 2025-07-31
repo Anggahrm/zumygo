@@ -2,8 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
-	"strconv"
 	"strings"
 )
 
@@ -78,8 +76,14 @@ type BotConfig struct {
 	APIKeys  map[string]string `json:"apikeys"`
 	
 	// System Settings
-	Multiplier int    `json:"multiplier"`
-	Prefix     string `json:"prefix"`
+	Multiplier int      `json:"multiplier"`
+	Prefix     string   `json:"prefix"`
+	Prefixes   []string `json:"prefixes"`
+	
+	// Bot Mode Settings
+	PublicMode  bool `json:"public_mode"`
+	ReadStatus  bool `json:"read_status"`
+	ReactStatus bool `json:"react_status"`
 	
 	// Database Settings
 	DatabaseURL string `json:"database_url"`
@@ -91,74 +95,74 @@ type BotConfig struct {
 
 var Config *BotConfig
 
-// LoadConfig loads configuration from environment variables and defaults
+// LoadConfig loads configuration with static defaults
 func LoadConfig() *BotConfig {
 	config := &BotConfig{
-		// Owner Settings - from env or defaults
-		Owner:       getStringSlice("OWNER", []string{"6285123865643"}),
-		Mods:        getStringSlice("MODS", []string{}),
-		Prems:       getStringSlice("PREMS", []string{}),
-		MaxWarn:     getIntEnv("MAX_WARN", 2),
-		NameOwner:   getEnv("NAME_OWNER", "anggahrm"),
-		NumberOwner: getEnv("NUMBER_OWNER", "6285123865643"),
-		NumberBot:   getEnv("NUMBER_BOT", "6281253216363"),
-		Mail:        getEnv("MAIL", "anggahrm@gmail.com"),
+		// Owner Settings - static defaults
+		Owner:       []string{"6285123865643"},
+		Mods:        []string{},
+		Prems:       []string{},
+		MaxWarn:     2,
+		NameOwner:   "anggahrm",
+		NumberOwner: "6285123865643",
+		NumberBot:   "6281253216363",
+		Mail:        "anggahrm@gmail.com",
 		
 		// Payment Info
-		Dana:  getEnv("DANA", "6285123865643"),
-		Pulsa: getEnv("PULSA", "6285123865643"),
-		Gopay: getEnv("GOPAY", "6287842262440"),
+		Dana:  "6285123865643",
+		Pulsa: "6285123865643",
+		Gopay: "6287842262440",
 		
 		// Bot Identity
-		NameBot:    getEnv("NAME_BOT", "ZumyNext"),
-		ChName:     getEnv("CH_NAME", "arsip raja iblis"),
-		Newsletter: getEnv("NEWSLETTER", "120363233010187559@newsletter"),
-		SGH:        getEnv("SGH", "https://github.com/Anggahrm"),
-		GC:         getEnv("GC", "https://chat.whatsapp.com/GrbvuguKCTPH4mIuRCouV8"),
+		NameBot:    "ZumyNext",
+		ChName:     "arsip raja iblis",
+		Newsletter: "120363233010187559@newsletter",
+		SGH:        "https://github.com/Anggahrm",
+		GC:         "https://chat.whatsapp.com/GrbvuguKCTPH4mIuRCouV8",
 		
 		// Panel Settings
-		PanelDomain: getEnv("PANEL_DOMAIN", "https://panel.zumynext.tech"),
-		PanelAPI:    getEnv("PANEL_API", "ptla_qf9ZcQGGVK3P5hJA7McoPLzKj25EsXyuMiU1Qpo0u0Z"),
-		PanelCAPI:   getEnv("PANEL_CAPI", "ptla_qf9ZcQGGVK3P5hJA7McoPLzKj25EsXyuMiU1Qpo0u0Z"),
-		SubZone:     getEnv("SUB_ZONE", "4eebdf1935753d55d75f89c93be43826"),
-		SubToken:    getEnv("SUB_TOKEN", "f961b7c159e0d0a6543017434db1a1bd5d490"),
-		SubDomain:   getEnv("SUB_DOMAIN", "anggahrm.my.id"),
-		Web:         getEnv("WEB", "https://anggahrm.my.id"),
+		PanelDomain: "https://panel.zumynext.tech",
+		PanelAPI:    "ptla_qf9ZcQGGVK3P5hJA7McoPLzKj25EsXyuMiU1Qpo0u0Z",
+		PanelCAPI:   "ptla_qf9ZcQGGVK3P5hJA7McoPLzKj25EsXyuMiU1Qpo0u0Z",
+		SubZone:     "4eebdf1935753d55d75f89c93be43826",
+		SubToken:    "f961b7c159e0d0a6543017434db1a1bd5d490",
+		SubDomain:   "anggahrm.my.id",
+		Web:         "https://anggahrm.my.id",
 		
 		// Media URLs
-		Zumy:    getEnv("ZUMY", "https://telegra.ph/file/ab4026bea092a1d640e78.jpg"),
-		ZumyGif: getEnv("ZUMY_GIF", "https://telegra.ph/file/b02d8a1ba8a6cca24d120.mp4"),
-		Zum:     getEnv("ZUM", "https://telegra.ph/file/df3a9789f4d9362581999.jpg"),
-		Iwel:    getEnv("IWEL", "https://telegra.ph/file/a5487661986e69b3ff0cc.jpg"),
-		Ilea:    getEnv("ILEA", "https://telegra.ph/file/df46938b10101dfd5b521.jpg"),
+		Zumy:    "https://telegra.ph/file/ab4026bea092a1d640e78.jpg",
+		ZumyGif: "https://telegra.ph/file/b02d8a1ba8a6cca24d120.mp4",
+		Zum:     "https://telegra.ph/file/df3a9789f4d9362581999.jpg",
+		Iwel:    "https://telegra.ph/file/a5487661986e69b3ff0cc.jpg",
+		Ilea:    "https://telegra.ph/file/df46938b10101dfd5b521.jpg",
 		
 		// Social Media
-		Instagram: getEnv("INSTAGRAM", "https://instagram.com/zumy.xyz"),
+		Instagram: "https://instagram.com/zumy.xyz",
 		
 		// Bot Messages
-		Zums:       getEnv("ZUMS", "Powered by ZumyNext"),
-		WM:         getEnv("WM", "© ZumyNext"),
-		Watermark:  getEnv("WATERMARK", "© ZumyNext"),
-		WM2:        getEnv("WM2", "⫹⫺ ZumyNext"),
-		Wait:       getEnv("WAIT", "_*Tunggu sedang di proses...*_"),
-		EWait:      getEnv("EWAIT", "⏱️"),
-		Error:      getEnv("ERROR", "_*Server Error*_"),
-		Benar:      getEnv("BENAR", "Benar ✅\n"),
-		EDone:      getEnv("EDONE", "✅"),
-		Salah:      getEnv("SALAH", "Salah ❌\n"),
-		EError:     getEnv("EERROR", "❌"),
-		StikerWait: getEnv("STIKER_WAIT", "*⫹⫺ Stiker sedang dibuat...*"),
+		Zums:       "Powered by ZumyNext",
+		WM:         "© ZumyNext",
+		Watermark:  "© ZumyNext",
+		WM2:        "⫹⫺ ZumyNext",
+		Wait:       "_*Tunggu sedang di proses...*_",
+		EWait:      "⏱️",
+		Error:      "_*Server Error*_",
+		Benar:      "Benar ✅\n",
+		EDone:      "✅",
+		Salah:      "Salah ❌\n",
+		EError:     "❌",
+		StikerWait: "*⫹⫺ Stiker sedang dibuat...*",
 		
 		// Sticker Settings
-		PackName: getEnv("PACK_NAME", "🌿"),
-		Author:   getEnv("AUTHOR", "anggahrm"),
+		PackName: "🌿",
+		Author:   "anggahrm",
 		
 		// API Keys
-		AlpisKey: getEnv("ALPIS_KEY", "4d1507f7"),
-		FG:       getEnv("FG", "798f2bf0"),
-		BTC:      getEnv("BTC", "Mark-HDR"),
-		Lann:     getEnv("LANN", "anggagtg"),
-		LolKey:   getEnv("LOL_KEY", "SGWN"),
+		AlpisKey: "4d1507f7",
+		FG:       "798f2bf0",
+		BTC:      "Mark-HDR",
+		Lann:     "anggagtg",
+		LolKey:   "SGWN",
 		
 		// APIs
 		APIs: map[string]string{
@@ -179,43 +183,25 @@ func LoadConfig() *BotConfig {
 		},
 		
 		// System Settings
-		Multiplier: getIntEnv("MULTIPLIER", 45),
-		Prefix:     getEnv("PREFIX", "."),
+		Multiplier: 45,
+		Prefix:     ".",
+		Prefixes:   []string{".", "!", "#", "$", "&", "?"},
+		
+		// Bot Mode Settings
+		PublicMode:  false, // Private mode by default
+		ReadStatus:  true,  // Auto-read status enabled by default
+		ReactStatus: true,  // Auto-react status enabled by default
 		
 		// Database Settings
-		DatabaseURL: getEnv("DATABASE_URL", ""),
+		DatabaseURL: "",
 		
 		// WhatsApp Settings
-		PairingNumber: getEnv("PAIRING_NUMBER", ""),
-		SessionName:   getEnv("SESSION_NAME", "session"),
+		PairingNumber: "",
+		SessionName:   "session",
 	}
 	
 	Config = config
 	return config
-}
-
-// Helper functions
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getIntEnv(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-func getStringSlice(key string, defaultValue []string) []string {
-	if value := os.Getenv(key); value != "" {
-		return strings.Split(value, ",")
-	}
-	return defaultValue
 }
 
 // API builds API URL with query parameters
@@ -280,6 +266,19 @@ func (c *BotConfig) IsPrem(number string) bool {
 		}
 	}
 	return false
+}
+
+// TogglePublicMode toggles the public mode setting
+func (c *BotConfig) TogglePublicMode() {
+	c.PublicMode = !c.PublicMode
+}
+
+// GetPrefixes returns all valid prefixes
+func (c *BotConfig) GetPrefixes() []string {
+	if len(c.Prefixes) > 0 {
+		return c.Prefixes
+	}
+	return []string{c.Prefix}
 }
 
 // ToJSON converts config to JSON string

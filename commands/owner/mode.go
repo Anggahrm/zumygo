@@ -1,9 +1,8 @@
 package commands
 
 import (
-	"zumygo/helpers"
 	"zumygo/libs"
-	"os"
+	"zumygo/config"
 )
 
 func init() {
@@ -14,32 +13,18 @@ func init() {
 		IsPrefix: true,
 		IsOwner:  true,
 		Execute: func(conn *libs.IClient, m *libs.IMessage) bool {
-			currentMode := os.Getenv("PUBLIC")
-			var newMode string
+			cfg := config.Config
 			var message string
 
-			if currentMode == "false" {
-				newMode = "true"
-				message = "The bot is now in public mode."
-			} else if currentMode == "true" {
-				newMode = "false"
+			if cfg.PublicMode {
+				cfg.PublicMode = false
 				message = "The bot is now in private mode."
 			} else {
-				newMode = "false"
-				message = "The bot is now in private mode."
+				cfg.PublicMode = true
+				message = "The bot is now in public mode."
 			}
 
-			// First update the .env file
-			err := helpers.UpdateEnvFile("PUBLIC", newMode)
-			if err != nil {
-				m.Reply("Failed to update .env file: " + err.Error())
-				return false
-			}
-
-			// Only update memory after successful file update
-			os.Setenv("PUBLIC", newMode)
 			m.Reply(message)
-
 			return true
 		},
 	})

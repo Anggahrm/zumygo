@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"zumygo/libs"
-	"os"
+	"zumygo/config"
 	"regexp"
 	"strings"
 	"time"
@@ -119,7 +119,7 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 		
 		if valid := len(re.FindAllString(commandName, -1)) > 0; valid {
 			if cmd.Execute != nil {
-				if os.Getenv("PUBLIC") == "false" && !m.IsOwner {
+				if !config.Config.PublicMode && !m.IsOwner {
 					return
 				}
 
