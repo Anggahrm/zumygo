@@ -1,4 +1,4 @@
-package conn
+package main
 
 import (
 	"context"
@@ -9,8 +9,11 @@ import (
 	"os/signal"
 	"regexp"
 	"syscall"
+	"time"
 
-	_ "zumygo/commands"
+	_ "zumygo/commands/main"   // Import main commands
+	_ "zumygo/commands/owner"  // Import owner commands
+	_ "zumygo/commands/Auto"   // Import auto commands
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
@@ -23,11 +26,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Template struct {
-	Nama   string
-	Status bool
-}
-
 var log helpers.Logger
 
 func init() {
@@ -35,14 +33,53 @@ func init() {
 	store.DeviceProps.Os = proto.String("Linux")
 }
 
+// connectWithRetry attempts to connect with retry mechanism
+func connectWithRetry(conn *whatsmeow.Client, maxRetries int) error {
+	for i := 0; i < maxRetries; i++ {
+		if err := conn.Connect(); err == nil {
+			return nil
+		}
+		log.Warn(fmt.Sprintf("Connection attempt %d failed, retrying in %d seconds...", i+1, i+1))
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return fmt.Errorf("failed to connect after %d attempts", maxRetries)
+}
+
 func StartClient() {
+	// Add recovery mechanism
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error(fmt.Sprintf("Recovered from panic: %v", r))
+		}
+	}()
+
+	// Validate configuration
+	if os.Getenv("OWNER") == "" {
+		log.Error("OWNER environment variable is required")
+		os.Exit(1)
+	}
+	if os.Getenv("PREFIX") == "" {
+		log.Error("PREFIX environment variable is required")
+		os.Exit(1)
+	}
+
+	log.Info("Configuration validation passed")
+	log.Info("Starting WhatsApp bot...")
+	
 	ctx := context.Background()
 	dbLog := waLog.Stdout("Database", "ERROR", true)
 	container, err := sqlstore.New(ctx, "sqlite3", "file:session.db?_foreign_keys=on", dbLog)
 	if err != nil {
-		panic(err)
+		log.Error("Failed to create database container: " + err.Error())
+		os.Exit(1)
 	}
+
 	handler := handlers.NewHandler(container)
+	if handler == nil {
+		log.Error("Failed to create message handler")
+		os.Exit(1)
+	}
+
 	log.Info("Connecting Socket")
 	conn := handler.Client()
 	conn.PrePairCallback = func(jid types.JID, platform, businessName string) bool {
@@ -57,21 +94,24 @@ func StartClient() {
 		if pairingNumber != "" {
 			pairingNumber = regexp.MustCompile(`\D+`).ReplaceAllString(pairingNumber, "")
 
-			if err := conn.Connect(); err != nil {
-				panic(err)
+			if err := connectWithRetry(conn, 3); err != nil {
+				log.Error("Failed to connect for pairing: " + err.Error())
+				os.Exit(1)
 			}
 
 			ctx := context.Background()
 			code, err := conn.PairPhone(ctx, pairingNumber, true, whatsmeow.PairClientChrome, "Edge (Linux)")
 			if err != nil {
-				panic(err)
+				log.Error("Failed to pair phone: " + err.Error())
+				os.Exit(1)
 			}
 
 			fmt.Println("Code Kamu : " + code)
 		} else {
 			qrChan, _ := conn.GetQRChannel(context.Background())
-			if err := conn.Connect(); err != nil {
-				panic(err)
+			if err := connectWithRetry(conn, 3); err != nil {
+				log.Error("Failed to connect for QR: " + err.Error())
+				os.Exit(1)
 			}
 
 			for evt := range qrChan {
@@ -84,8 +124,9 @@ func StartClient() {
 		}
 	} else {
 		// Already logged in, just connect
-		if err := conn.Connect(); err != nil {
-			panic(err)
+		if err := connectWithRetry(conn, 3); err != nil {
+			log.Error("Failed to connect: " + err.Error())
+			os.Exit(1)
 		}
 		log.Info("Connected Socket")
 	}
@@ -95,5 +136,6 @@ func StartClient() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
+	log.Info("Shutting down gracefully...")
 	conn.Disconnect()
 }

@@ -3,7 +3,7 @@ package libs
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -21,6 +21,10 @@ func SerializeClient(conn *whatsmeow.Client) *IClient {
 }
 
 func (conn *IClient) SendText(from types.JID, txt string, opts *waE2E.ContextInfo, optn ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
 	ok, er := conn.WA.SendMessage(context.Background(), from, &waE2E.Message{
 		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 			Text:        proto.String(txt),
@@ -34,6 +38,10 @@ func (conn *IClient) SendText(from types.JID, txt string, opts *waE2E.ContextInf
 }
 
 func (conn *IClient) SendWithNewsLestter(from types.JID, text string, newjid string, newserver int32, name string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if opts == nil {
+		opts = &waE2E.ContextInfo{}
+	}
+	
 	ok, er := conn.SendText(from, text, &waE2E.ContextInfo{
 		ForwardedNewsletterMessageInfo: &waE2E.ContextInfo_ForwardedNewsletterMessageInfo{
 			NewsletterJID:     proto.String(newjid),
@@ -55,11 +63,19 @@ func (conn *IClient) SendWithNewsLestter(from types.JID, text string, newjid str
 }
 
 func (conn *IClient) SendImage(from types.JID, data []byte, caption string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(data) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("image data is empty")
+	}
+	
 	uploaded, err := conn.WA.Upload(context.Background(), data, whatsmeow.MediaImage)
 	if err != nil {
-		fmt.Printf("Failed to upload file: %v\n", err)
-		return whatsmeow.SendResponse{}, err
+		return whatsmeow.SendResponse{}, fmt.Errorf("failed to upload image: %v", err)
 	}
+	
 	resultImg := &waE2E.Message{
 		ImageMessage: &waE2E.ImageMessage{
 			URL:           proto.String(uploaded.URL),
@@ -73,16 +89,27 @@ func (conn *IClient) SendImage(from types.JID, data []byte, caption string, opts
 			ContextInfo:   opts,
 		},
 	}
-	ok, _ := conn.WA.SendMessage(context.Background(), from, resultImg)
+	ok, err := conn.WA.SendMessage(context.Background(), from, resultImg)
+	if err != nil {
+		return whatsmeow.SendResponse{}, err
+	}
 	return ok, nil
 }
 
 func (conn *IClient) SendVideo(from types.JID, data []byte, caption string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(data) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("video data is empty")
+	}
+	
 	uploaded, err := conn.WA.Upload(context.Background(), data, whatsmeow.MediaVideo)
 	if err != nil {
-		fmt.Printf("Failed to upload file: %v\n", err)
-		return whatsmeow.SendResponse{}, err
+		return whatsmeow.SendResponse{}, fmt.Errorf("failed to upload video: %v", err)
 	}
+	
 	resultVideo := &waE2E.Message{
 		VideoMessage: &waE2E.VideoMessage{
 			URL:           proto.String(uploaded.URL),
@@ -104,11 +131,23 @@ func (conn *IClient) SendVideo(from types.JID, data []byte, caption string, opts
 }
 
 func (conn *IClient) SendDocument(from types.JID, data []byte, fileName string, caption string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(data) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("document data is empty")
+	}
+	
+	if fileName == "" {
+		fileName = "document"
+	}
+	
 	uploaded, err := conn.WA.Upload(context.Background(), data, whatsmeow.MediaDocument)
 	if err != nil {
-		fmt.Printf("Failed to upload file: %v\n", err)
-		return whatsmeow.SendResponse{}, err
+		return whatsmeow.SendResponse{}, fmt.Errorf("failed to upload document: %v", err)
 	}
+	
 	resultDoc := &waE2E.Message{
 		DocumentMessage: &waE2E.DocumentMessage{
 			URL:           proto.String(uploaded.URL),
@@ -130,8 +169,16 @@ func (conn *IClient) SendDocument(from types.JID, data []byte, fileName string, 
 	return ok, nil
 }
 
-func (conn *IClient) DeleteMsg(from types.JID, id string, me bool) {
-	conn.WA.SendMessage(context.Background(), from, &waE2E.Message{
+func (conn *IClient) DeleteMsg(from types.JID, id string, me bool) error {
+	if conn.WA == nil {
+		return fmt.Errorf("client is not initialized")
+	}
+	
+	if id == "" {
+		return fmt.Errorf("message ID is required")
+	}
+	
+	_, err := conn.WA.SendMessage(context.Background(), from, &waE2E.Message{
 		ProtocolMessage: &waE2E.ProtocolMessage{
 			Type: waE2E.ProtocolMessage_REVOKE.Enum(),
 			Key: &waCommon.MessageKey{
@@ -140,9 +187,14 @@ func (conn *IClient) DeleteMsg(from types.JID, id string, me bool) {
 			},
 		},
 	})
+	return err
 }
 
 func (conn *IClient) ParseJID(arg string) (types.JID, bool) {
+	if arg == "" {
+		return types.JID{}, false
+	}
+	
 	if arg[0] == '+' {
 		arg = arg[1:]
 	}
@@ -160,6 +212,10 @@ func (conn *IClient) ParseJID(arg string) (types.JID, bool) {
 }
 
 func (conn *IClient) FetchGroupAdmin(Jid types.JID) ([]string, error) {
+	if conn.WA == nil {
+		return nil, fmt.Errorf("client is not initialized")
+	}
+	
 	var Admin []string
 	resp, err := conn.WA.GetGroupInfo(Jid)
 	if err != nil {
@@ -175,10 +231,17 @@ func (conn *IClient) FetchGroupAdmin(Jid types.JID) ([]string, error) {
 }
 
 func (conn *IClient) SendSticker(jid types.JID, data []byte, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(data) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("sticker data is empty")
+	}
+	
 	uploaded, err := conn.WA.Upload(context.Background(), data, whatsmeow.MediaImage)
 	if err != nil {
-		fmt.Printf("Failed to upload file: %v\n", err)
-		return whatsmeow.SendResponse{}, err
+		return whatsmeow.SendResponse{}, fmt.Errorf("failed to upload sticker: %v", err)
 	}
 
 	ok, er := conn.WA.SendMessage(context.Background(), jid, &waE2E.Message{
@@ -202,14 +265,23 @@ func (conn *IClient) SendSticker(jid types.JID, data []byte, opts *waE2E.Context
 }
 
 func (conn *IClient) GetBytes(url string) ([]byte, error) {
+	if url == "" {
+		return nil, fmt.Errorf("URL is required")
+	}
+	
 	resp, err := http.Get(url)
 	if err != nil {
-		return []byte{}, err
+		return nil, fmt.Errorf("failed to fetch URL: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP request failed with status: %d", resp.StatusCode)
 	}
 
-	bytes, err := ioutil.ReadAll(resp.Body)
+	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return []byte{}, err
+		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
 	return bytes, nil

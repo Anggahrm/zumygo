@@ -1,13 +1,13 @@
 package main
 
 import (
-	conn "zumygo"
-
+	"fmt"
 	"github.com/subosito/gotenv"
 )
 
 func main() {
 	gotenv.Load()
 
-	conn.StartClient()
+	fmt.Println("Starting WhatsApp bot...")
+	StartClient()
 }

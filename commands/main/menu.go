@@ -57,7 +57,8 @@ func menu(conn *libs.IClient, m *libs.IMessage) bool {
 		for _, e := range tags[key] {
 			var prefix string
 			if e.IsPrefix {
-				prefix = m.Command[:1]
+				// Get prefix from the original message body
+				prefix, _ = libs.ExtractPrefix(m.Body)
 			} else {
 				prefix = ""
 			}

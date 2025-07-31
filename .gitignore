@@ -1,5 +1,107 @@
-*.exe
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# Database files
 *.db
+*.sqlite
+*.sqlite3
+session.db
+session.db-*
+
+# Log files
+*.log
 logs.txt
-go.sum
-.sesi
+logs/
+log/
+
+# Binary files
+*.exe
+*.exe~
+zumygo.exe
+zumygo.exe~
+
+# Go build artifacts
+bin/
+dist/
+build/
+
+# Go cache and temporary files
+*.test
+*.out
+go.work
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Session and authentication files
+session/
+auth/
+credentials/
+
+# Media files (if any)
+media/
+uploads/
+downloads/
+
+# Node modules (if using any Node.js tools)
+node_modules/
+
+# Python cache (if using any Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentation build files
+docs/_build/
+site/
+
+# Coverage reports
+coverage/
+*.cover
+coverage.out
+
+# Profiling data
+*.prof
+*.pprof
+
+# Dependency directories
+vendor/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work 

@@ -16,7 +16,8 @@ func init() {
 			start := time.Now()
 			messageTime := time.Unix(m.Info.Timestamp.Unix(), 0)
 			ping := start.Sub(messageTime).Seconds()
-			m.Reply(fmt.Sprintf("*Ping :* %.2f Detik\n", ping))
+			response := fmt.Sprintf("*Ping :* %.2f Detik\n", ping)
+			m.Reply(response)
 			return true
 		},
 	})

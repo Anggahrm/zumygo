@@ -25,7 +25,8 @@ func NewHandler(container *sqlstore.Container) *IHandler {
 	ctx := context.Background()
 	deviceStore, err := container.GetFirstDevice(ctx)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Failed to get first device: %v\n", err)
+		return nil
 	}
 	return &IHandler{
 		Container: deviceStore,
@@ -33,7 +34,7 @@ func NewHandler(container *sqlstore.Container) *IHandler {
 }
 
 func (h *IHandler) Client() *whatsmeow.Client {
-	clientLog := waLog.Stdout("lient", "ERROR", true)
+	clientLog := waLog.Stdout("Client", "ERROR", true)
 	conn := whatsmeow.NewClient(h.Container, clientLog)
 	conn.AddEventHandler(h.RegisterHandler(conn))
 	return conn
@@ -64,8 +65,10 @@ func (h *IHandler) RegisterHandler(conn *whatsmeow.Client) func(evt interface{})
 				}
 			}
 
-			// Get command
-			go ExecuteCommand(sock, m)
+				// Get command
+	if m.Command != "" && libs.HasCommand(m.Command) {
+		go ExecuteCommand(sock, m)
+	}
 			return
 		case *events.Connected, *events.PushNameSetting:
 			if len(conn.Store.PushName) == 0 {
@@ -77,18 +80,44 @@ func (h *IHandler) RegisterHandler(conn *whatsmeow.Client) func(evt interface{})
 }
 
 func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
-	var prefix string
-	pattern := regexp.MustCompile(os.Getenv("PREFIX"))
-	for _, f := range pattern.FindAllString(m.Command, -1) {
-		prefix = f
+	// Add recovery mechanism for command execution
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from command execution panic: %v\n", r)
+			if m != nil {
+				m.Reply("An error occurred while executing the command")
+			}
+		}
+	}()
+
+	// Get the command name (already processed in SerializeMessage)
+	commandName := m.Command
+	if commandName == "" {
+		return
 	}
+	
+	// Extract prefix from the original message body
+	prefix, hasPrefix := libs.ExtractPrefix(m.Body)
+	if !hasPrefix {
+		return
+	}
+	
 	lists := libs.GetList()
 	for _, cmd := range lists {
 		if cmd.Before != nil {
 			cmd.Before(c, m)
 		}
-		re := regexp.MustCompile(`^` + cmd.Name + `$`)
-		if valid := len(re.FindAllString(strings.ReplaceAll(m.Command, prefix, ""), -1)) > 0; valid {
+		// Check if command matches using regex
+		var re *regexp.Regexp
+		if strings.ContainsAny(cmd.Name, "|*+?()[]{}") {
+			// Use as regex pattern
+			re = regexp.MustCompile(`^` + cmd.Name + `$`)
+		} else {
+			// Use exact match with quote meta for safety
+			re = regexp.MustCompile(`^` + regexp.QuoteMeta(cmd.Name) + `$`)
+		}
+		
+		if valid := len(re.FindAllString(commandName, -1)) > 0; valid {
 			if cmd.Execute != nil {
 				if os.Getenv("PUBLIC") == "false" && !m.IsOwner {
 					return
@@ -96,7 +125,7 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 
 				var cmdWithPref bool
 				var cmdWithoutPref bool
-				if cmd.IsPrefix && (prefix != "" && strings.HasPrefix(m.Command, prefix)) {
+				if cmd.IsPrefix && prefix != "" {
 					cmdWithPref = true
 				} else {
 					cmdWithPref = false
@@ -149,8 +178,10 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 				if cmd.IsWait && ok {
 					c.WA.MarkRead([]string{m.Info.ID}, time.Now(), m.Info.Chat, m.Info.Sender)
 					m.React("")
-					continue
 				}
+				
+				// Return after executing command to avoid multiple executions
+				return
 			}
 		}
 	}
