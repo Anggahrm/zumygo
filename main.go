@@ -20,7 +20,6 @@ var (
 	healthSystem   *systems.HealthSystem
 	economySystem  *systems.EconomySystem
 	levelingSystem *systems.LevelingSystem
-	pluginManager  *plugins.PluginManager
 	logger         *helpers.Logger
 )
 
