@@ -1,4 +1,5 @@
 # Environment variables
+.cursorignore
 .env
 .env.local
 .env.production
