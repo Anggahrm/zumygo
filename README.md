@@ -34,10 +34,8 @@ A powerful and secure WhatsApp bot built with Go using the [whatsmeow](https://g
 3. **Setup environment variables**
    ```bash
    # Copy the example environment file
-   cp env.example .env
-   
+   cp .env.example .env 
    # Edit the .env file with your configuration
-   nano .env
    ```
 
 ## ⚙️ Configuration
@@ -76,17 +74,12 @@ PAIRING_NUMBER=6281234567890
 
 ## 🚀 Running the Bot
 
-1. **Build the bot**
+1. **Run the bot**
    ```bash
-   go build -o zumygo.exe
+   go run .
    ```
 
-2. **Run the bot**
-   ```bash
-   ./zumygo.exe
-   ```
-
-3. **Login**
+2. **Login**
    - If `PAIRING_NUMBER` is set: Enter the pairing code
    - If not set: Scan the QR code with WhatsApp
 
