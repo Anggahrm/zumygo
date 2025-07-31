@@ -1,10 +1,9 @@
 package libs
 
 import (
-	"encoding/json"
-	"os"
 	"regexp"
 	"strings"
+	"zumygo/config"
 )
 
 var lists []ICommand
@@ -32,46 +31,15 @@ func GetList() []ICommand {
 	return lists
 }
 
-// GetPrefixes returns all valid prefixes from environment variable
+// GetPrefixes returns all valid prefixes from config
 func GetPrefixes() []string {
-	return ParseArrayFromEnv("PREFIX")
+	if config.Config != nil {
+		return config.Config.GetPrefixes()
+	}
+	return []string{"."}
 }
 
-// ParseArrayFromEnv parses an environment variable as JSON array or comma-separated string
-func ParseArrayFromEnv(envVar string) []string {
-	envValue := os.Getenv(envVar)
-	if envValue == "" {
-		return []string{}
-	}
-	
-	// Try to parse as JSON array first
-	if strings.HasPrefix(envValue, "[") && strings.HasSuffix(envValue, "]") {
-		var result []string
-		if err := json.Unmarshal([]byte(envValue), &result); err == nil {
-			var validItems []string
-			for _, item := range result {
-				item = strings.TrimSpace(item)
-				if item != "" {
-					validItems = append(validItems, item)
-				}
-			}
-			return validItems
-		}
-	}
-	
-	// Fallback to comma-separated for backward compatibility
-	items := strings.Split(envValue, ",")
-	var validItems []string
-	
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			validItems = append(validItems, item)
-		}
-	}
-	
-	return validItems
-}
+
 
 // ExtractPrefix extracts the prefix from a command string
 func ExtractPrefix(command string) (string, bool) {

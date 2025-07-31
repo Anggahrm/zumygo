@@ -2,9 +2,9 @@ package commands
 
 import (
 	"math/rand"
-	"os"
 	"time"
 	"zumygo/libs"
+	"zumygo/config"
 
 	"go.mau.fi/whatsmeow/types"
 )
@@ -14,8 +14,10 @@ func init() {
 		Before: func(conn *libs.IClient, m *libs.IMessage) {
 			// Check if this is a status message
 			if m.Info.Chat.String() == "status@broadcast" {
+				cfg := config.Config
+				
 				// Check if auto-read status is enabled
-				if os.Getenv("READ_STATUS") == "true" {
+				if cfg.ReadStatus {
 					// Mark status as read
 					err := conn.WA.MarkRead([]types.MessageID{m.Info.ID}, m.Info.Timestamp, m.Info.Chat, m.Info.Sender)
 					if err != nil {
@@ -24,7 +26,7 @@ func init() {
 					}
 
 					// Check if auto-react status is enabled
-					if os.Getenv("REACT_STATUS") == "true" {
+					if cfg.ReactStatus {
 						// List of emojis for random reactions
 						emojis := []string{
 							"😀", "😃", "😄", "😁", "😆", "🥹", "😅", "😂", "🤣", "🥲", "☺️", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😶‍🌫️", "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🫣", "🤭", "🫢", "🫡", "🤫", "🫠", "🤥", "😶", "🫥", "😐", "🫤", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤡", "💩", "👻", "💀", "☠️", "🙌", "👏", "👍", "👎", "👊", "✊", "🤛", "🤞", "✌️", "🫰", "🤟", "🤘", "👌", "🤏", "☝️", "✋", "🤚", "🖖", "👋", "🤙", "🫲", "🫱", "💪", "🖕", "✍️", "🙏", "🫵", "🦶", "👣", "👀", "🧠",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"zumygo/helpers"
+	"zumygo/config"
 	"regexp"
 	"strings"
 
@@ -63,7 +64,9 @@ func SerializeMessage(mess *events.Message, conn *IClient) *IMessage {
 		}
 	}
 	
-	owner = ParseArrayFromEnv("OWNER")
+	if config.Config != nil {
+		owner = config.Config.Owner
+	}
 
 	for _, v := range owner {
 		if v != "" && strings.Contains(nonDigitRegex.ReplaceAllString(v, ""), sender.ToNonAD().User) {

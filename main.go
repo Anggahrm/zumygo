@@ -7,7 +7,6 @@ import (
 	"zumygo/database"
 	"zumygo/systems"
 	"zumygo/helpers"
-	"github.com/subosito/gotenv"
 )
 
 var (
@@ -21,9 +20,6 @@ var (
 )
 
 func main() {
-	// Load environment variables
-	gotenv.Load()
-
 	// Initialize logger
 	logger = &helpers.Logger{}
 	
