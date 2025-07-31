@@ -153,7 +153,6 @@ func (ls *LevelingSystem) AddExperience(userJID string, expGain int64) (string, 
 	user := ls.db.GetUser(userJID)
 	
 	oldLevel := user.Level
-	oldExp := user.Exp
 	
 	// Add experience
 	user.Exp += expGain

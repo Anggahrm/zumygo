@@ -8,9 +8,27 @@ import (
 	"time"
 	"zumygo/config"
 	"zumygo/database"
-	"zumygo/plugins"
 	"zumygo/systems"
 )
+
+// CommandMessage represents a command message
+type CommandMessage struct {
+	ID        string
+	From      string
+	Chat      string
+	Text      string
+	Command   string
+	Args      []string
+	IsGroup   bool
+	IsOwner   bool
+	IsAdmin   bool
+	IsPremium bool
+	User      *database.User
+	ChatData  *database.Chat
+	Reply     func(string) error
+	React     func(string) error
+	Delete    func() error
+}
 
 // GeneralCommands handles all general bot commands
 type GeneralCommands struct {
@@ -35,7 +53,7 @@ func NewGeneralCommands(cfg *config.BotConfig, db *database.Database, ms *system
 }
 
 // HandleCommand processes general commands
-func (gc *GeneralCommands) HandleCommand(msg *plugins.CommandMessage) bool {
+func (gc *GeneralCommands) HandleCommand(msg *CommandMessage) bool {
 	switch msg.Command {
 	// === INFO COMMANDS ===
 	case "menu", "help":
@@ -159,7 +177,7 @@ func (gc *GeneralCommands) HandleCommand(msg *plugins.CommandMessage) bool {
 
 // === INFO COMMAND HANDLERS ===
 
-func (gc *GeneralCommands) handleMenu(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleMenu(msg *CommandMessage) {
 	menu := fmt.Sprintf("🤖 *%s Menu*\n\n", gc.cfg.NameBot)
 	menu += "📋 *General Commands:*\n"
 	menu += "• menu/help - Show this menu\n"
@@ -201,7 +219,7 @@ func (gc *GeneralCommands) handleMenu(msg *plugins.CommandMessage) {
 	msg.Reply(menu)
 }
 
-func (gc *GeneralCommands) handlePing(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handlePing(msg *CommandMessage) {
 	start := time.Now()
 	response := "🏓 Pong!"
 	duration := time.Since(start)
@@ -212,7 +230,7 @@ func (gc *GeneralCommands) handlePing(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleRuntime(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleRuntime(msg *CommandMessage) {
 	uptime := gc.db.GetUptime()
 	hours := uptime / 3600
 	minutes := (uptime % 3600) / 60
@@ -227,7 +245,7 @@ func (gc *GeneralCommands) handleRuntime(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleOwner(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleOwner(msg *CommandMessage) {
 	response := "👑 *Bot Owner Information*\n\n"
 	response += fmt.Sprintf("📛 Name: %s\n", gc.cfg.NameOwner)
 	response += fmt.Sprintf("📱 Number: %s\n", gc.cfg.NumberOwner)
@@ -238,7 +256,7 @@ func (gc *GeneralCommands) handleOwner(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleScript(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleScript(msg *CommandMessage) {
 	response := "📜 *Bot Source Code*\n\n"
 	response += "🔗 GitHub: https://github.com/YourRepo/ZumyGo\n"
 	response += "💻 Language: Go\n"
@@ -257,7 +275,7 @@ func (gc *GeneralCommands) handleScript(msg *plugins.CommandMessage) {
 
 // === FUN COMMAND HANDLERS ===
 
-func (gc *GeneralCommands) handleSay(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleSay(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: say <text>")
 		return
@@ -267,7 +285,7 @@ func (gc *GeneralCommands) handleSay(msg *plugins.CommandMessage) {
 	msg.Reply(text)
 }
 
-func (gc *GeneralCommands) handleTruth(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleTruth(msg *CommandMessage) {
 	truths := []string{
 		"Apa hal paling memalukan yang pernah kamu lakukan?",
 		"Siapa crush kamu saat ini?",
@@ -286,7 +304,7 @@ func (gc *GeneralCommands) handleTruth(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleDare(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleDare(msg *CommandMessage) {
 	dares := []string{
 		"Kirim voice note sambil nyanyi lagu kebangsaan!",
 		"Update status WA dengan hal paling memalukan tentang dirimu!",
@@ -305,7 +323,7 @@ func (gc *GeneralCommands) handleDare(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleRate(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleRate(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: rate <something>")
 		return
@@ -334,7 +352,7 @@ func (gc *GeneralCommands) handleRate(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleCouple(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleCouple(msg *CommandMessage) {
 	couples := []string{
 		"❤️ Perfect Match! Kalian cocok banget!",
 		"💕 Sweet Couple! Relationship goals nih!",
@@ -358,7 +376,7 @@ func (gc *GeneralCommands) handleCouple(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleQuotes(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleQuotes(msg *CommandMessage) {
 	quotes := []string{
 		"\"Hidup ini seperti sepeda, agar tetap seimbang kamu harus terus bergerak.\" - Albert Einstein",
 		"\"Masa depan milik mereka yang percaya pada keindahan mimpi mereka.\" - Eleanor Roosevelt",
@@ -377,7 +395,7 @@ func (gc *GeneralCommands) handleQuotes(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleMotivasi(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleMotivasi(msg *CommandMessage) {
 	motivations := []string{
 		"🔥 Kamu lebih kuat dari yang kamu kira! Terus semangat!",
 		"⭐ Setiap hari adalah kesempatan baru untuk menjadi lebih baik!",
@@ -396,7 +414,7 @@ func (gc *GeneralCommands) handleMotivasi(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleFaktaUnik(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleFaktaUnik(msg *CommandMessage) {
 	facts := []string{
 		"🐙 Gurita memiliki 3 jantung dan darah berwarna biru!",
 		"🍯 Madu tidak akan pernah basi, bahkan setelah ribuan tahun!",
@@ -417,7 +435,7 @@ func (gc *GeneralCommands) handleFaktaUnik(msg *plugins.CommandMessage) {
 
 // === RANDOM COMMAND HANDLERS ===
 
-func (gc *GeneralCommands) handleDadu(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleDadu(msg *CommandMessage) {
 	dice1 := rand.Intn(6) + 1
 	dice2 := rand.Intn(6) + 1
 	total := dice1 + dice2
@@ -432,7 +450,7 @@ func (gc *GeneralCommands) handleDadu(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleKoin(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleKoin(msg *CommandMessage) {
 	result := rand.Intn(2)
 	var coin string
 	
@@ -446,7 +464,7 @@ func (gc *GeneralCommands) handleKoin(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleSlot(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleSlot(msg *CommandMessage) {
 	symbols := []string{"🍒", "🍋", "🍊", "🍇", "⭐", "💎", "🔔", "7️⃣"}
 	
 	slot1 := symbols[rand.Intn(len(symbols))]
@@ -476,7 +494,7 @@ func (gc *GeneralCommands) handleSlot(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleTebakAngka(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleTebakAngka(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: tebakangka <1-100>")
 		return
@@ -523,7 +541,7 @@ func (gc *GeneralCommands) handleTebakAngka(msg *plugins.CommandMessage) {
 
 // === TEXT COMMAND HANDLERS ===
 
-func (gc *GeneralCommands) handleReverse(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleReverse(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: reverse <text>")
 		return
@@ -539,7 +557,7 @@ func (gc *GeneralCommands) handleReverse(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleUpper(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleUpper(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: upper <text>")
 		return
@@ -555,7 +573,7 @@ func (gc *GeneralCommands) handleUpper(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleLower(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleLower(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: lower <text>")
 		return
@@ -571,7 +589,7 @@ func (gc *GeneralCommands) handleLower(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleCount(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleCount(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: count <text>")
 		return
@@ -591,7 +609,7 @@ func (gc *GeneralCommands) handleCount(msg *plugins.CommandMessage) {
 
 // === CALCULATOR ===
 
-func (gc *GeneralCommands) handleCalc(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleCalc(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: calc <expression>\nExample: calc 5 + 3")
 		return
@@ -615,7 +633,7 @@ func (gc *GeneralCommands) handleCalc(msg *plugins.CommandMessage) {
 
 // === TIME COMMANDS ===
 
-func (gc *GeneralCommands) handleWaktu(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleWaktu(msg *CommandMessage) {
 	now := time.Now()
 	
 	response := "🕐 *Current Time*\n\n"
@@ -627,7 +645,7 @@ func (gc *GeneralCommands) handleWaktu(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleTanggal(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleTanggal(msg *CommandMessage) {
 	now := time.Now()
 	
 	response := "📅 *Current Date*\n\n"
@@ -641,7 +659,7 @@ func (gc *GeneralCommands) handleTanggal(msg *plugins.CommandMessage) {
 
 // === PROFILE COMMANDS ===
 
-func (gc *GeneralCommands) handleProfile(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleProfile(msg *CommandMessage) {
 	user := msg.User
 	
 	response := "👤 *Your Profile*\n\n"
@@ -658,7 +676,7 @@ func (gc *GeneralCommands) handleProfile(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleSetName(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleSetName(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: setname <name>")
 		return
@@ -681,7 +699,7 @@ func (gc *GeneralCommands) handleSetName(msg *plugins.CommandMessage) {
 	msg.Reply(response)
 }
 
-func (gc *GeneralCommands) handleSetBio(msg *plugins.CommandMessage) {
+func (gc *GeneralCommands) handleSetBio(msg *CommandMessage) {
 	if len(msg.Args) == 0 {
 		msg.Reply("❌ Usage: setbio <bio>")
 		return
