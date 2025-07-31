@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"zumygo/handlers"
 	"zumygo/helpers"
-	"zumygo/plugins"
 	"zumygo/systems"
 	"zumygo/database"
 	"zumygo/config"
@@ -28,15 +28,35 @@ import (
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 	waproto "go.mau.fi/whatsmeow/binary/proto"
 )
 
 var (
-	log helpers.Logger
+	clientLogger helpers.Logger
 	statusUpdateTicker *time.Ticker
 )
+
+// CommandMessage represents a command message
+type CommandMessage struct {
+	ID        string
+	From      string
+	Chat      string
+	Text      string
+	Command   string
+	Args      []string
+	IsGroup   bool
+	IsOwner   bool
+	IsAdmin   bool
+	IsPremium bool
+	User      *database.User
+	ChatData  *database.Chat
+	Reply     func(string) error
+	React     func(string) error
+	Delete    func() error
+}
 
 func init() {
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_EDGE.Enum()
@@ -49,7 +69,7 @@ func connectWithRetry(conn *whatsmeow.Client, maxRetries int) error {
 		if err := conn.Connect(); err == nil {
 			return nil
 		}
-		log.Warn(fmt.Sprintf("Connection attempt %d failed, retrying in %d seconds...", i+1, i+1))
+		clientLogger.Warn(fmt.Sprintf("Connection attempt %d failed, retrying in %d seconds...", i+1, i+1))
 		time.Sleep(time.Second * time.Duration(i+1))
 	}
 	return fmt.Errorf("failed to connect after %d attempts", maxRetries)
@@ -59,7 +79,7 @@ func StartClient() {
 	// Add recovery mechanism
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error(fmt.Sprintf("Recovered from panic: %v", r))
+			clientLogger.Error(fmt.Sprintf("Recovered from panic: %v", r))
 		}
 	}()
 
@@ -70,39 +90,38 @@ func StartClient() {
 	healthSystem := GetGlobalHealthSystem()
 	economySystem := GetGlobalEconomySystem()
 	levelingSystem := GetGlobalLevelingSystem()
-	pluginManager := GetGlobalPluginManager()
 	
 	// Validate configuration
 	if len(cfg.Owner) == 0 {
-		log.Error("OWNER configuration is required")
+		clientLogger.Error("OWNER configuration is required")
 		os.Exit(1)
 	}
 	if cfg.Prefix == "" {
-		log.Error("PREFIX configuration is required")
+		clientLogger.Error("PREFIX configuration is required")
 		os.Exit(1)
 	}
 
-	log.Info("Configuration validation passed")
-	log.Info("Starting WhatsApp bot with enhanced features...")
+	clientLogger.Info("Configuration validation passed")
+	clientLogger.Info("Starting WhatsApp bot with enhanced features...")
 	
 	ctx := context.Background()
 	dbLog := waLog.Stdout("Database", "ERROR", true)
 	container, err := sqlstore.New(ctx, "sqlite3", "file:session.db?_foreign_keys=on", dbLog)
 	if err != nil {
-		log.Error("Failed to create database container: " + err.Error())
+		clientLogger.Error("Failed to create database container: " + err.Error())
 		os.Exit(1)
 	}
 
 	handler := handlers.NewHandler(container)
 	if handler == nil {
-		log.Error("Failed to create message handler")
+		clientLogger.Error("Failed to create message handler")
 		os.Exit(1)
 	}
 
-	log.Info("Connecting Socket")
+	clientLogger.Info("Connecting Socket")
 	conn := handler.Client()
 	conn.PrePairCallback = func(jid types.JID, platform, businessName string) bool {
-		log.Info("Connected Socket")
+		clientLogger.Info("Connected Socket")
 		return true
 	}
 
@@ -114,14 +133,14 @@ func StartClient() {
 			pairingNumber = regexp.MustCompile(`\D+`).ReplaceAllString(pairingNumber, "")
 
 			if err := connectWithRetry(conn, 3); err != nil {
-				log.Error("Failed to connect for pairing: " + err.Error())
+				clientLogger.Error("Failed to connect for pairing: " + err.Error())
 				os.Exit(1)
 			}
 
 			ctx := context.Background()
 			code, err := conn.PairPhone(ctx, pairingNumber, true, whatsmeow.PairClientChrome, "Edge (Linux)")
 			if err != nil {
-				log.Error("Failed to pair phone: " + err.Error())
+				clientLogger.Error("Failed to pair phone: " + err.Error())
 				os.Exit(1)
 			}
 
@@ -129,7 +148,7 @@ func StartClient() {
 		} else {
 			qrChan, _ := conn.GetQRChannel(context.Background())
 			if err := connectWithRetry(conn, 3); err != nil {
-				log.Error("Failed to connect for QR: " + err.Error())
+				clientLogger.Error("Failed to connect for QR: " + err.Error())
 				os.Exit(1)
 			}
 
@@ -137,31 +156,31 @@ func StartClient() {
 				switch string(evt.Event) {
 				case "code":
 					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-					log.Info("QR Code generated - scan with WhatsApp")
+					clientLogger.Info("QR Code generated - scan with WhatsApp")
 				}
 			}
 		}
 	} else {
 		// Already logged in, just connect
 		if err := connectWithRetry(conn, 3); err != nil {
-			log.Error("Failed to connect: " + err.Error())
+			clientLogger.Error("Failed to connect: " + err.Error())
 			os.Exit(1)
 		}
-		log.Info("Connected to WhatsApp successfully")
+		clientLogger.Info("Connected to WhatsApp successfully")
 	}
 
 	// Start periodic status updates
 	startStatusUpdates(conn, cfg, db)
 
-	// Set up enhanced message handler with plugin support
-	setupEnhancedMessageHandler(conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem, pluginManager)
+	// Set up enhanced message handler
+	setupEnhancedMessageHandler(conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem)
 
 	// Listen to Ctrl+C (you can also do something else that prevents the program from exiting)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
-	log.Info("Shutting down gracefully...")
+	clientLogger.Info("Shutting down gracefully...")
 	
 	// Stop status updates
 	if statusUpdateTicker != nil {
@@ -171,7 +190,7 @@ func StartClient() {
 	// Save database before shutdown
 	if db := GetGlobalDatabase(); db != nil {
 		if err := db.Save(); err != nil {
-			log.Error("Failed to save database: " + err.Error())
+			clientLogger.Error("Failed to save database: " + err.Error())
 		}
 	}
 	
@@ -213,18 +232,18 @@ func startStatusUpdates(conn *whatsmeow.Client, cfg *config.BotConfig, db *datab
 	}()
 }
 
-// setupEnhancedMessageHandler sets up message handling with plugin support
-func setupEnhancedMessageHandler(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem, pluginManager *plugins.PluginManager) {
-	conn.AddEventHandler(func(evt *whatsmeow.Event) {
+// setupEnhancedMessageHandler sets up message handling
+func setupEnhancedMessageHandler(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem) {
+	conn.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
-		case *whatsmeow.MessageEvent:
-			handleEnhancedMessage(v, conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem, pluginManager)
+		case *events.Message:
+			handleEnhancedMessage(v, conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem)
 		}
 	})
 }
 
-// handleEnhancedMessage handles incoming messages with plugin support
-func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem, pluginManager *plugins.PluginManager) {
+// handleEnhancedMessage handles incoming messages
+func handleEnhancedMessage(evt *events.Message, conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem) {
 	// Skip if no message content
 	if evt.Message == nil {
 		return
@@ -286,7 +305,7 @@ func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, 
 	isGroup := evt.Info.Chat.Server == "g.us"
 	
 	// Create command message
-	cmdMsg := &plugins.CommandMessage{
+	cmdMsg := &CommandMessage{
 		ID:        evt.Info.ID,
 		From:      evt.Info.Sender.String(),
 		Chat:      evt.Info.Chat.String(),
@@ -303,46 +322,54 @@ func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, 
 			_, err := conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
 				Conversation: &text,
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 		React: func(emoji string) error {
-			return conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
+			_, err := conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
 				ReactionMessage: &waproto.ReactionMessage{
 					Key: &waproto.MessageKey{
-						RemoteJid: &evt.Info.Chat.String(),
-						FromMe:    &evt.Info.FromMe,
-						Id:        &evt.Info.ID,
+						RemoteJID: proto.String(evt.Info.Chat.String()),
+						FromMe:    proto.Bool(false),
+						ID:        proto.String(evt.Info.ID),
 					},
-					Text: &emoji,
+					Text: proto.String(emoji),
 				},
 			})
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 		Delete: func() error {
-			return conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
+			_, err := conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
 				ProtocolMessage: &waproto.ProtocolMessage{
 					Type: waproto.ProtocolMessage_REVOKE.Enum(),
 					Key: &waproto.MessageKey{
-						RemoteJid: &evt.Info.Chat.String(),
-						FromMe:    &evt.Info.FromMe,
-						Id:        &evt.Info.ID,
+						RemoteJID: proto.String(evt.Info.Chat.String()),
+						FromMe:    proto.Bool(false),
+						ID:        proto.String(evt.Info.ID),
 					},
 				},
 			})
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 	
-	// Try to execute command through plugin system
-	if err := pluginManager.ExecuteCommand(cmdMsg); err != nil {
-		// If plugin command fails, try built-in commands
-		handleBuiltinCommands(cmdMsg, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem)
-	}
+	// Handle built-in commands
+	handleBuiltinCommands(cmdMsg, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem)
 	
 	// Update command statistics
 	db.IncrementCommand(command)
 }
 
-// handleBuiltinCommands handles built-in commands that aren't plugins
-func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem) {
+// handleBuiltinCommands handles built-in commands
+func handleBuiltinCommands(msg *CommandMessage, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem) {
 	switch msg.Command {
 	// Mining Commands
 	case "mine":

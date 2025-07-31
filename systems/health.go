@@ -2,7 +2,6 @@ package systems
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 	"zumygo/database"
 )

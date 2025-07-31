@@ -2,14 +2,11 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"zumygo/config"
 	"zumygo/database"
 	"zumygo/systems"
-	"zumygo/plugins"
 	"zumygo/helpers"
-	"zumygo/server"
 	"github.com/subosito/gotenv"
 )
 
@@ -20,7 +17,6 @@ var (
 	healthSystem   *systems.HealthSystem
 	economySystem  *systems.EconomySystem
 	levelingSystem *systems.LevelingSystem
-	pluginManager  *plugins.PluginManager
 	logger         *helpers.Logger
 )
 
@@ -65,31 +61,6 @@ func main() {
 	levelingSystem = systems.InitializeLevelingSystem(db)
 	logger.Info("Leveling system initialized successfully")
 
-	// Initialize plugin system
-	pluginContext := &plugins.PluginContext{
-		Config:         cfg,
-		Database:       db,
-		MiningSystem:   miningSystem,
-		HealthSystem:   healthSystem,
-		EconomySystem:  economySystem,
-		LevelingSystem: levelingSystem,
-		Logger:         logger,
-		Prefix:         cfg.Prefix,
-	}
-
-	pluginManager = plugins.NewPluginManager(pluginContext, "plugins")
-	if err := pluginManager.LoadAllPlugins(); err != nil {
-		logger.Warn(fmt.Sprintf("Failed to load some plugins: %v", err))
-	} else {
-		logger.Info("Plugin system initialized successfully")
-	}
-
-	// Start plugin directory watcher
-	pluginManager.WatchPluginDirectory()
-
-	// Start web server
-	server.StartWebServer(cfg, db, miningSystem, healthSystem, economySystem, levelingSystem, pluginManager)
-
 	// Print startup information
 	printStartupInfo()
 
@@ -110,8 +81,6 @@ func printStartupInfo() {
 	fmt.Printf("║ Health System: %-21s ║\n", "✅ Active")
 	fmt.Printf("║ Economy System: %-20s ║\n", "✅ Active")
 	fmt.Printf("║ Leveling System: %-19s ║\n", "✅ Active")
-	fmt.Printf("║ Plugins: %-27s ║\n", "✅ Loaded")
-	fmt.Printf("║ Web Server: %-24s ║\n", "✅ Running")
 	fmt.Println("╚══════════════════════════════════════╝")
 	fmt.Println()
 	
@@ -121,19 +90,7 @@ func printStartupInfo() {
 	fmt.Println("  ❤️  Health System - Manage HP and potions")
 	fmt.Println("  💰 Economy System - Work, shop, and trade")
 	fmt.Println("  ⭐ Leveling System - Gain XP and unlock roles")
-	fmt.Println("  🔌 Plugin System - Hot-reloadable commands")
-	fmt.Println("  🌐 Web Dashboard - Real-time monitoring")
 	fmt.Println()
-	
-	// Show loaded plugins
-	commands := pluginManager.GetCommands()
-	if len(commands) > 0 {
-		fmt.Printf("🔌 Loaded %d commands from plugins:\n", len(commands))
-		for name := range commands {
-			fmt.Printf("  • %s\n", name)
-		}
-		fmt.Println()
-	}
 	
 	// Show built-in commands count
 	builtinCommands := []string{
@@ -144,10 +101,6 @@ func printStartupInfo() {
 		"balance", "stats", "toplevel", "topmoney", "tophealth",
 	}
 	fmt.Printf("⚡ Built-in commands: %d\n", len(builtinCommands))
-	fmt.Printf("🌐 Web dashboard: http://localhost:%s\n", os.Getenv("PORT"))
-	if os.Getenv("PORT") == "" {
-		fmt.Printf("🌐 Web dashboard: http://localhost:8080\n")
-	}
 	fmt.Println()
 }
 
@@ -179,11 +132,6 @@ func GetGlobalEconomySystem() *systems.EconomySystem {
 // GetGlobalLevelingSystem returns the global leveling system
 func GetGlobalLevelingSystem() *systems.LevelingSystem {
 	return levelingSystem
-}
-
-// GetGlobalPluginManager returns the global plugin manager
-func GetGlobalPluginManager() *plugins.PluginManager {
-	return pluginManager
 }
 
 // GetGlobalLogger returns the global logger
