@@ -63,11 +63,14 @@ type CommandMessage struct {
 
 // PluginContext provides access to bot systems
 type PluginContext struct {
-	Config        *config.BotConfig
-	Database      *database.Database
-	MiningSystem  *systems.MiningSystem
-	Logger        *helpers.Logger
-	Prefix        string
+	Config         *config.BotConfig
+	Database       *database.Database
+	MiningSystem   *systems.MiningSystem
+	HealthSystem   *systems.HealthSystem
+	EconomySystem  *systems.EconomySystem
+	LevelingSystem *systems.LevelingSystem
+	Logger         *helpers.Logger
+	Prefix         string
 }
 
 // PluginManager manages all loaded plugins

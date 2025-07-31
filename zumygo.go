@@ -67,6 +67,9 @@ func StartClient() {
 	cfg := GetGlobalConfig()
 	db := GetGlobalDatabase()
 	miningSystem := GetGlobalMiningSystem()
+	healthSystem := GetGlobalHealthSystem()
+	economySystem := GetGlobalEconomySystem()
+	levelingSystem := GetGlobalLevelingSystem()
 	pluginManager := GetGlobalPluginManager()
 	
 	// Validate configuration
@@ -151,7 +154,7 @@ func StartClient() {
 	startStatusUpdates(conn, cfg, db)
 
 	// Set up enhanced message handler with plugin support
-	setupEnhancedMessageHandler(conn, cfg, db, miningSystem, pluginManager)
+	setupEnhancedMessageHandler(conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem, pluginManager)
 
 	// Listen to Ctrl+C (you can also do something else that prevents the program from exiting)
 	c := make(chan os.Signal, 1)
@@ -211,17 +214,17 @@ func startStatusUpdates(conn *whatsmeow.Client, cfg *config.BotConfig, db *datab
 }
 
 // setupEnhancedMessageHandler sets up message handling with plugin support
-func setupEnhancedMessageHandler(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, pluginManager *plugins.PluginManager) {
+func setupEnhancedMessageHandler(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem, pluginManager *plugins.PluginManager) {
 	conn.AddEventHandler(func(evt *whatsmeow.Event) {
 		switch v := evt.(type) {
 		case *whatsmeow.MessageEvent:
-			handleEnhancedMessage(v, conn, cfg, db, miningSystem, pluginManager)
+			handleEnhancedMessage(v, conn, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem, pluginManager)
 		}
 	})
 }
 
 // handleEnhancedMessage handles incoming messages with plugin support
-func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, pluginManager *plugins.PluginManager) {
+func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem, pluginManager *plugins.PluginManager) {
 	// Skip if no message content
 	if evt.Message == nil {
 		return
@@ -249,6 +252,18 @@ func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, 
 	// Update chat activity
 	chat.LastActivity = time.Now().Unix()
 	chat.MessageCount++
+	
+	// Add experience for sending messages (1-3 XP per message)
+	baseExp := int64(1 + rand.Intn(3))
+	expGain := levelingSystem.CalculateExpGain(evt.Info.Sender.String(), baseExp)
+	levelUpMsg, leveledUp := levelingSystem.AddExperience(evt.Info.Sender.String(), expGain)
+	
+	// Send level up message if user leveled up
+	if leveledUp && levelUpMsg != "" {
+		conn.SendMessage(context.Background(), evt.Info.Chat, &waproto.Message{
+			Conversation: &levelUpMsg,
+		})
+	}
 	
 	// Check if message starts with prefix
 	if !strings.HasPrefix(messageText, cfg.Prefix) {
@@ -319,7 +334,7 @@ func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, 
 	// Try to execute command through plugin system
 	if err := pluginManager.ExecuteCommand(cmdMsg); err != nil {
 		// If plugin command fails, try built-in commands
-		handleBuiltinCommands(cmdMsg, cfg, db, miningSystem)
+		handleBuiltinCommands(cmdMsg, cfg, db, miningSystem, healthSystem, economySystem, levelingSystem)
 	}
 	
 	// Update command statistics
@@ -327,8 +342,9 @@ func handleEnhancedMessage(evt *whatsmeow.MessageEvent, conn *whatsmeow.Client, 
 }
 
 // handleBuiltinCommands handles built-in commands that aren't plugins
-func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem) {
+func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, db *database.Database, miningSystem *systems.MiningSystem, healthSystem *systems.HealthSystem, economySystem *systems.EconomySystem, levelingSystem *systems.LevelingSystem) {
 	switch msg.Command {
+	// Mining Commands
 	case "mine":
 		if result, err := miningSystem.Mine(msg.From); err == nil {
 			msg.Reply(result)
@@ -374,7 +390,171 @@ func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, d
 		} else {
 			msg.Reply("❌ Sale failed: " + err.Error())
 		}
+
+	// Health Commands
+	case "health", "hp":
+		result := healthSystem.GetHealthInfo(msg.From)
+		msg.Reply(result)
 		
+	case "usepotion", "heal":
+		if result, err := healthSystem.UseHealthPotion(msg.From); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Failed to use potion: " + err.Error())
+		}
+		
+	case "potionshop":
+		result := healthSystem.GetPotionShop()
+		msg.Reply(result)
+		
+	case "buypotion":
+		if len(msg.Args) < 1 {
+			msg.Reply("❌ Usage: buypotion <type> [quantity]\nTypes: small, medium, large, mega")
+			return
+		}
+		
+		quantity := int64(1)
+		if len(msg.Args) > 1 {
+			if parsed, err := strconv.ParseInt(msg.Args[1], 10, 64); err == nil {
+				quantity = parsed
+			}
+		}
+		
+		if result, err := healthSystem.BuyHealthPotion(msg.From, msg.Args[0], quantity); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Purchase failed: " + err.Error())
+		}
+		
+	case "upgradehealth":
+		if result, err := healthSystem.UpgradeMaxHealth(msg.From); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Upgrade failed: " + err.Error())
+		}
+
+	// Economy Commands
+	case "work":
+		if result, err := economySystem.Work(msg.From); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Work failed: " + err.Error())
+		}
+		
+	case "daily", "claim":
+		if result, err := economySystem.DailyClaim(msg.From); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Claim failed: " + err.Error())
+		}
+		
+	case "shop":
+		result := economySystem.GetShop()
+		msg.Reply(result)
+		
+	case "buy":
+		if len(msg.Args) < 1 {
+			msg.Reply("❌ Usage: buy <item>\nUse 'shop' to see available items")
+			return
+		}
+		
+		if result, err := economySystem.BuyItem(msg.From, msg.Args[0]); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Purchase failed: " + err.Error())
+		}
+		
+	case "inventory", "inv":
+		result := economySystem.GetInventory(msg.From)
+		msg.Reply(result)
+		
+	case "transfer", "tf":
+		if len(msg.Args) < 2 {
+			msg.Reply("❌ Usage: transfer <@user> <amount>")
+			return
+		}
+		
+		// Extract target user from mention (simplified)
+		targetJID := msg.Args[0] // This would need proper mention parsing
+		amount, err := strconv.ParseInt(msg.Args[1], 10, 64)
+		if err != nil {
+			msg.Reply("❌ Invalid amount!")
+			return
+		}
+		
+		if result, err := economySystem.Transfer(msg.From, targetJID, amount); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Transfer failed: " + err.Error())
+		}
+		
+	case "rob":
+		if len(msg.Args) < 1 {
+			msg.Reply("❌ Usage: rob <@user>")
+			return
+		}
+		
+		targetJID := msg.Args[0] // This would need proper mention parsing
+		if result, err := economySystem.Rob(msg.From, targetJID); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Robbery failed: " + err.Error())
+		}
+		
+	case "deposit":
+		if len(msg.Args) < 1 {
+			msg.Reply("❌ Usage: deposit <amount>")
+			return
+		}
+		
+		amount, err := strconv.ParseInt(msg.Args[0], 10, 64)
+		if err != nil {
+			msg.Reply("❌ Invalid amount!")
+			return
+		}
+		
+		if result, err := economySystem.ATMDeposit(msg.From, amount); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Deposit failed: " + err.Error())
+		}
+		
+	case "withdraw":
+		if len(msg.Args) < 1 {
+			msg.Reply("❌ Usage: withdraw <amount>")
+			return
+		}
+		
+		amount, err := strconv.ParseInt(msg.Args[0], 10, 64)
+		if err != nil {
+			msg.Reply("❌ Invalid amount!")
+			return
+		}
+		
+		if result, err := economySystem.ATMWithdraw(msg.From, amount); err == nil {
+			msg.Reply(result)
+		} else {
+			msg.Reply("❌ Withdrawal failed: " + err.Error())
+		}
+
+	// Leveling Commands
+	case "level", "lvl":
+		result := levelingSystem.GetLevelInfo(msg.From)
+		msg.Reply(result)
+		
+	case "leaderboard", "lb":
+		result := levelingSystem.GetLeaderboard()
+		msg.Reply(result)
+		
+	case "roles":
+		result := levelingSystem.GetRoleList()
+		msg.Reply(result)
+		
+	case "autolevelup":
+		result := levelingSystem.ToggleAutoLevelUp(msg.From)
+		msg.Reply(result)
+
+	// General Commands
 	case "balance", "bal":
 		user := msg.User
 		balanceMsg := fmt.Sprintf("💰 *Your Balance*\n\n")
@@ -382,7 +562,8 @@ func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, d
 		balanceMsg += fmt.Sprintf("🪙 ZumyCoin: %d ZC\n", user.ZC)
 		balanceMsg += fmt.Sprintf("🏦 ATM: %d coins\n", user.ATM)
 		balanceMsg += fmt.Sprintf("⭐ Level: %d\n", user.Level)
-		balanceMsg += fmt.Sprintf("✨ Experience: %d\n", user.Exp)
+		balanceMsg += fmt.Sprintf("✨ Experience: %d XP\n", user.Exp)
+		balanceMsg += fmt.Sprintf("🏷️ Role: %s\n", user.Role)
 		msg.Reply(balanceMsg)
 		
 	case "stats":
@@ -398,5 +579,18 @@ func handleBuiltinCommands(msg *plugins.CommandMessage, cfg *config.BotConfig, d
 		statsMsg += fmt.Sprintf("⏰ Uptime: %dh %dm\n", hours, minutes)
 		statsMsg += fmt.Sprintf("🔧 Commands Used: %d\n", len(stats.Commands))
 		msg.Reply(statsMsg)
+		
+	// Leaderboards
+	case "toplevel":
+		result := levelingSystem.GetLeaderboard()
+		msg.Reply(result)
+		
+	case "topmoney":
+		result := economySystem.GetEconomyLeaderboard()
+		msg.Reply(result)
+		
+	case "tophealth":
+		result := healthSystem.GetHealthLeaderboard()
+		msg.Reply(result)
 	}
 }

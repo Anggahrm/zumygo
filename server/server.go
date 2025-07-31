@@ -17,12 +17,15 @@ import (
 
 // Server represents the web server
 type Server struct {
-	config        *config.BotConfig
-	database      *database.Database
-	miningSystem  *systems.MiningSystem
-	pluginManager *plugins.PluginManager
-	startTime     time.Time
-	port          int
+	config         *config.BotConfig
+	database       *database.Database
+	miningSystem   *systems.MiningSystem
+	healthSystem   *systems.HealthSystem
+	economySystem  *systems.EconomySystem
+	levelingSystem *systems.LevelingSystem
+	pluginManager  *plugins.PluginManager
+	startTime      time.Time
+	port           int
 }
 
 // Response represents a standard API response
@@ -49,7 +52,7 @@ type BotStatus struct {
 }
 
 // NewServer creates a new web server instance
-func NewServer(cfg *config.BotConfig, db *database.Database, ms *systems.MiningSystem, pm *plugins.PluginManager) *Server {
+func NewServer(cfg *config.BotConfig, db *database.Database, ms *systems.MiningSystem, hs *systems.HealthSystem, es *systems.EconomySystem, ls *systems.LevelingSystem, pm *plugins.PluginManager) *Server {
 	port := 8080
 	if portEnv := os.Getenv("PORT"); portEnv != "" {
 		if p, err := strconv.Atoi(portEnv); err == nil {
@@ -58,12 +61,15 @@ func NewServer(cfg *config.BotConfig, db *database.Database, ms *systems.MiningS
 	}
 
 	return &Server{
-		config:        cfg,
-		database:      db,
-		miningSystem:  ms,
-		pluginManager: pm,
-		startTime:     time.Now(),
-		port:          port,
+		config:         cfg,
+		database:       db,
+		miningSystem:   ms,
+		healthSystem:   hs,
+		economySystem:  es,
+		levelingSystem: ls,
+		pluginManager:  pm,
+		startTime:      time.Now(),
+		port:           port,
 	}
 }
 
@@ -303,9 +309,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime":    s.getUptimeString(),
 		"version":   "2.0",
 		"services": map[string]bool{
-			"database":      s.database != nil,
-			"miningSystem":  s.miningSystem != nil,
-			"pluginManager": s.pluginManager != nil,
+			"database":       s.database != nil,
+			"miningSystem":   s.miningSystem != nil,
+			"healthSystem":   s.healthSystem != nil,
+			"economySystem":  s.economySystem != nil,
+			"levelingSystem": s.levelingSystem != nil,
+			"pluginManager":  s.pluginManager != nil,
 		},
 	}
 	
@@ -355,8 +364,8 @@ func bToMb(b uint64) uint64 {
 }
 
 // StartWebServer starts the web server in a separate goroutine
-func StartWebServer(cfg *config.BotConfig, db *database.Database, ms *systems.MiningSystem, pm *plugins.PluginManager) {
-	server := NewServer(cfg, db, ms, pm)
+func StartWebServer(cfg *config.BotConfig, db *database.Database, ms *systems.MiningSystem, hs *systems.HealthSystem, es *systems.EconomySystem, ls *systems.LevelingSystem, pm *plugins.PluginManager) {
+	server := NewServer(cfg, db, ms, hs, es, ls, pm)
 	
 	go func() {
 		server.Start()
