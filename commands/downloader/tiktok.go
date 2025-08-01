@@ -2,7 +2,9 @@ package downloader
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"sync"
 	"zumygo/libs"
 	"zumygo/systems"
 )
@@ -40,6 +42,10 @@ func init() {
 				return false
 			}
 
+			// Check cache first
+			tiktokID := extractTikTokID(url)
+			tiktokInfo := getCachedTikTokInfo(tiktokID)
+			
 			// Download TikTok video
 			result, err := downloaderSystem.DownloadMedia("tiktok", url)
 			if err != nil {
@@ -52,6 +58,17 @@ func init() {
 				return false
 			}
 
+			// Cache the result if we have a TikTok ID
+			if tiktokID != "" && tiktokInfo == nil {
+				tiktokInfo = &TikTokInfo{
+					VideoID:     tiktokID,
+					URL:         url,
+					Title:       result.Title,
+					Description: result.Title,
+				}
+				cacheTikTokInfo(tiktokID, tiktokInfo)
+			}
+
 			// Download video data
 			videoData, err := conn.GetBytes(result.URL)
 			if err != nil {
@@ -59,10 +76,16 @@ func init() {
 				return false
 			}
 
-			// Create caption
+			// Create caption with detailed information
+			title := result.Title
+			if title == "" {
+				title = "TikTok Video"
+			}
+			
 			caption := fmt.Sprintf(`┌─⊷ TIKTOK
 ▢ *Deskripsi:* %s
-└───────────`, result.Title)
+▢ *URL:* %s
+└───────────`, title, url)
 
 			// Send video file
 			_, err = conn.SendVideo(m.Info.Chat, videoData, caption, nil)
@@ -76,4 +99,56 @@ func init() {
 			return true
 		},
 	})
+}
+
+// TikTokInfo holds detailed information about a TikTok video
+type TikTokInfo struct {
+	VideoID     string `json:"videoId"`
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Thumbnail   string `json:"thumbnail"`
+	Duration    string `json:"duration"`
+	Published   string `json:"published_at"`
+	Views       int64  `json:"views"`
+	Author      string `json:"author"`
+	AuthorURL   string `json:"authorUrl"`
+}
+
+// Simple cache for TikTok video information
+var (
+	tiktokCache = make(map[string]*TikTokInfo)
+	tiktokCacheMutex sync.RWMutex
+)
+
+// cacheTikTokInfo stores TikTok video information in cache
+func cacheTikTokInfo(videoID string, info *TikTokInfo) {
+	tiktokCacheMutex.Lock()
+	defer tiktokCacheMutex.Unlock()
+	tiktokCache[videoID] = info
+}
+
+// getCachedTikTokInfo retrieves TikTok video information from cache
+func getCachedTikTokInfo(videoID string) *TikTokInfo {
+	tiktokCacheMutex.RLock()
+	defer tiktokCacheMutex.RUnlock()
+	return tiktokCache[videoID]
+}
+
+// extractTikTokID extracts the video ID from a TikTok URL
+func extractTikTokID(url string) string {
+	// TikTok URL patterns
+	patterns := []string{
+		`(?:tiktok\.com\/@[^\/]+\/video\/|vm\.tiktok\.com\/)([^&\n?#\/]+)`,
+		`tiktok\.com\/@[^\/]+\/video\/([^&\n?#\/]+)`,
+	}
+	
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindStringSubmatch(url)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return ""
 } 

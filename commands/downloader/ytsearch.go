@@ -1,39 +1,13 @@
 package downloader
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
-	"zumygo/config"
 	"zumygo/libs"
+	"zumygo/systems"
 )
 
-// YouTubeSearchResult represents a single search result
-type YouTubeSearchResult struct {
-	VideoID      string `json:"videoId"`
-	URL          string `json:"url"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	Thumbnail    string `json:"thumbnail"`
-	Duration     string `json:"duration"`
-	PublishedAt  string `json:"published_at"`
-	Views        int    `json:"views"`
-	IsLive       bool   `json:"isLive"`
-	Author       struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
-	} `json:"author"`
-}
 
-// YouTubeSearchResponse represents the API response
-type YouTubeSearchResponse struct {
-	Status  bool                  `json:"status"`
-	Creator string                `json:"creator"`
-	Result  []YouTubeSearchResult `json:"result"`
-}
 
 func init() {
 	libs.NewCommands(&libs.ICommand{
@@ -55,44 +29,17 @@ func init() {
 			// Send processing reaction
 			m.React("⏱️")
 
-			// Get config for API key
-			cfg := config.GetConfig()
-			if cfg == nil {
-				m.Reply("❎ Config not available")
+			// Get downloader system from global systems
+			downloaderSystem := systems.GetGlobalDownloaderSystem()
+			if downloaderSystem == nil {
+				m.Reply("❎ Downloader system not available")
 				return false
 			}
 
-			// Build API URL
-			apiURL := fmt.Sprintf("https://api.betabotz.eu.org/api/search/yts?query=%s&apikey=%s", 
-				url.QueryEscape(query), cfg.APIKeys["lann"])
-
-			// Make API request
-			resp, err := http.Get(apiURL)
+			// Search for videos using the downloader system
+			searchResults, err := downloaderSystem.SearchYouTubeMultiple(query)
 			if err != nil {
 				m.Reply(fmt.Sprintf("❎ Gagal melakukan pencarian: %v", err))
-				return false
-			}
-			defer resp.Body.Close()
-
-			// Read response body
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				m.Reply("❎ Gagal membaca response API")
-				return false
-			}
-
-
-
-			// Parse JSON response
-			var searchResponse YouTubeSearchResponse
-			if err := json.Unmarshal(bodyBytes, &searchResponse); err != nil {
-				m.Reply(fmt.Sprintf("❎ Gagal parse response: %v\nResponse: %s", err, string(bodyBytes)))
-				return false
-			}
-
-			// Check if search was successful
-			if !searchResponse.Status || len(searchResponse.Result) == 0 {
-				m.Reply("❎ Tidak ada hasil ditemukan untuk: " + query)
 				return false
 			}
 
@@ -102,12 +49,12 @@ func init() {
 
 			// Limit to first 10 results
 			maxResults := 10
-			if len(searchResponse.Result) < maxResults {
-				maxResults = len(searchResponse.Result)
+			if len(searchResults) < maxResults {
+				maxResults = len(searchResults)
 			}
 
 			for i := 0; i < maxResults; i++ {
-				result := searchResponse.Result[i]
+				result := searchResults[i]
 				
 				// Format duration and views
 				duration := result.Duration
@@ -115,7 +62,7 @@ func init() {
 					duration = "Unknown"
 				}
 				
-				views := fmt.Sprintf("%d", result.Views)
+				views := downloaderSystem.FormatViews(result.Views)
 				if result.Views == 0 {
 					views = "Unknown"
 				}
@@ -128,7 +75,7 @@ func init() {
 👤 *Author:* %s
 🔗 *URL:* %s
 
-`, i+1, result.Title, duration, views, result.PublishedAt, result.Author.Name, result.URL)
+`, i+1, result.Title, duration, views, result.Published, result.Author, result.URL)
 				
 				results = append(results, entry)
 			}
@@ -137,7 +84,7 @@ func init() {
 			fullMessage := strings.Join(results, "")
 
 			// Add footer
-			fullMessage += fmt.Sprintf("\n*Total Results:* %d\n*Use .play <URL> to download audio*", len(searchResponse.Result))
+			fullMessage += fmt.Sprintf("\n*Total Results:* %d\n*Use .play <URL> to download audio*", len(searchResults))
 
 			// Send the search results
 			m.Reply(fullMessage)
