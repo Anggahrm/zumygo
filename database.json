@@ -1197,6 +1197,27 @@
       "premiumTime": 0,
       "premiumDate": -1
     },
+    "29708624330917@lid": {
+      "name": "",
+      "age": -1,
+      "regTime": -1,
+      "registered": false,
+      "exp": 0,
+      "level": 0,
+      "role": "Newbie ㋡",
+      "autolevelup": true,
+      "pasangan": "",
+      "warn": 0,
+      "banned": false,
+      "Banneduser": false,
+      "BannedReason": "",
+      "lastpm": 0,
+      "afk": -1,
+      "afkReason": "",
+      "premium": false,
+      "premiumTime": 0,
+      "premiumDate": -1
+    },
     "3071270760671:44@lid": {
       "name": "",
       "age": -1,
@@ -2517,8 +2538,8 @@
       "antiToxic": false,
       "antiVirtex": false,
       "viewonce": true,
-      "lastActivity": 1754034889,
-      "messageCount": 10,
+      "lastActivity": 1754035437,
+      "messageCount": 11,
       "game": true
     },
     "120363206779926315@newsletter": {
@@ -2717,8 +2738,8 @@
       "antiToxic": false,
       "antiVirtex": false,
       "viewonce": true,
-      "lastActivity": 1754035407,
-      "messageCount": 104,
+      "lastActivity": 1754035463,
+      "messageCount": 106,
       "game": true
     },
     "120363377104405116@g.us": {
@@ -2937,8 +2958,8 @@
       "antiToxic": false,
       "antiVirtex": false,
       "viewonce": true,
-      "lastActivity": 1754035384,
-      "messageCount": 240,
+      "lastActivity": 1754035414,
+      "messageCount": 241,
       "game": true
     },
     "status@broadcast": {
@@ -2963,9 +2984,9 @@
     }
   },
   "stats": {
-    "totalUsers": 119,
+    "totalUsers": 120,
     "totalChats": 23,
-    "totalMessages": 772,
+    "totalMessages": 776,
     "startTime": 1754023369,
     "commands": {
       "afk": 1,
