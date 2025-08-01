@@ -693,6 +693,27 @@
       "premiumTime": 0,
       "premiumDate": -1
     },
+    "195021965897830@lid": {
+      "name": "",
+      "age": -1,
+      "regTime": -1,
+      "registered": false,
+      "exp": 0,
+      "level": 0,
+      "role": "Newbie ㋡",
+      "autolevelup": true,
+      "pasangan": "",
+      "warn": 0,
+      "banned": false,
+      "Banneduser": false,
+      "BannedReason": "",
+      "lastpm": 0,
+      "afk": -1,
+      "afkReason": "",
+      "premium": false,
+      "premiumTime": 0,
+      "premiumDate": -1
+    },
     "19667259232452@lid": {
       "name": "",
       "age": -1,
@@ -1639,6 +1660,27 @@
       "premiumDate": -1
     },
     "6282387775667@s.whatsapp.net": {
+      "name": "",
+      "age": -1,
+      "regTime": -1,
+      "registered": false,
+      "exp": 0,
+      "level": 0,
+      "role": "Newbie ㋡",
+      "autolevelup": true,
+      "pasangan": "",
+      "warn": 0,
+      "banned": false,
+      "Banneduser": false,
+      "BannedReason": "",
+      "lastpm": 0,
+      "afk": -1,
+      "afkReason": "",
+      "premium": false,
+      "premiumTime": 0,
+      "premiumDate": -1
+    },
+    "6283838709177@s.whatsapp.net": {
       "name": "",
       "age": -1,
       "regTime": -1,
@@ -2819,8 +2861,8 @@
       "antiToxic": false,
       "antiVirtex": false,
       "viewonce": true,
-      "lastActivity": 1754030988,
-      "messageCount": 11,
+      "lastActivity": 1754039489,
+      "messageCount": 12,
       "game": true
     },
     "120363398687404368@g.us": {
@@ -2979,8 +3021,8 @@
       "antiToxic": false,
       "antiVirtex": false,
       "viewonce": true,
-      "lastActivity": 1754035502,
-      "messageCount": 244,
+      "lastActivity": 1754039513,
+      "messageCount": 248,
       "game": true
     },
     "status@broadcast": {
@@ -3005,9 +3047,9 @@
     }
   },
   "stats": {
-    "totalUsers": 121,
+    "totalUsers": 123,
     "totalChats": 23,
-    "totalMessages": 782,
+    "totalMessages": 787,
     "startTime": 1754023369,
     "commands": {
       "afk": 1,

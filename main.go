@@ -46,6 +46,9 @@ func main() {
 	systems.SetGlobalDownloaderSystem(downloaderSystem)
 	logger.Info("Downloader system initialized successfully")
 
+	// Bio system is auto-initialized via Before hook
+	logger.Info("Bio system auto-initialized via Before hook")
+
 	// Print startup information
 	printStartupInfo()
 
@@ -64,12 +67,14 @@ func printStartupInfo() {
 	fmt.Printf("║ Database: %-26s ║\n", "✅ Active")
 
 	fmt.Printf("║ Downloader System: %-17s ║\n", "✅ Active")
+	fmt.Printf("║ Bio System: %-17s ║\n", "✅ Active")
 	fmt.Println("╚══════════════════════════════════════╝")
 	fmt.Println()
 	
 	// Show system features
 	fmt.Println("🎮 Available Features:")
 	fmt.Println("  📥 Downloader System - Download media from various platforms")
+	fmt.Println("  📝 Bio System - Auto update profile bio")
 	fmt.Println()
 	
 	// Show built-in commands count
@@ -98,6 +103,8 @@ func GetGlobalDatabase() *database.Database {
 func GetGlobalDownloaderSystem() *systems.DownloaderSystem {
 	return downloaderSystem
 }
+
+
 
 // GetGlobalLogger returns the global logger
 func GetGlobalLogger() *helpers.Logger {

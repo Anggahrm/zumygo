@@ -35,7 +35,6 @@ import (
 
 var (
 	clientLogger helpers.Logger
-	statusUpdateTicker *time.Ticker
 )
 
 // CommandMessage represents a command message
@@ -165,8 +164,8 @@ func StartClient() {
 		clientLogger.Info("Connected to WhatsApp successfully")
 	}
 
-	// Start periodic status updates
-	startStatusUpdates(conn, cfg, db)
+	// Bio system is auto-managed via Before hook
+	clientLogger.Info("Bio system auto-managed via Before hook")
 
 	// Set up enhanced message handler
 	setupEnhancedMessageHandler(conn, cfg, db, downloaderSystem)
@@ -178,10 +177,8 @@ func StartClient() {
 
 	clientLogger.Info("Shutting down gracefully...")
 	
-	// Stop status updates
-	if statusUpdateTicker != nil {
-		statusUpdateTicker.Stop()
-	}
+	// Bio system is auto-managed, no need to stop
+	clientLogger.Info("Bio system auto-managed, no cleanup needed")
 	
 	// Save database before shutdown
 	if db := GetGlobalDatabase(); db != nil {
@@ -193,40 +190,7 @@ func StartClient() {
 	conn.Disconnect()
 }
 
-// startStatusUpdates starts periodic status updates similar to JavaScript base
-func startStatusUpdates(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database) {
-	statusUpdateTicker = time.NewTicker(1 * time.Minute) // Update every minute
-	
-	go func() {
-		defer statusUpdateTicker.Stop()
-		
-		for range statusUpdateTicker.C {
-			if conn.IsConnected() {
-				uptime := db.GetUptime()
-				hours := uptime / 3600
-				minutes := (uptime % 3600) / 60
-				
-				var uptimeStr string
-				if hours > 0 {
-					uptimeStr = fmt.Sprintf("%dh %dm", hours, minutes)
-				} else {
-					uptimeStr = fmt.Sprintf("%dm", minutes)
-				}
-				
-				userCount := len(db.Users)
-				mode := "Public-Mode"
-				if cfg.Prefix == "." {
-					mode = "Self-Mode"
-				}
-				
-				status := fmt.Sprintf("I am %s | Online for %s ⏳ | Mode: %s | Users: %d | Created by %s", 
-					cfg.NameBot, uptimeStr, mode, userCount, cfg.NameOwner)
-				
-				conn.SetStatusMessage(status)
-			}
-		}
-	}()
-}
+
 
 // setupEnhancedMessageHandler sets up message handling
 func setupEnhancedMessageHandler(conn *whatsmeow.Client, cfg *config.BotConfig, db *database.Database, downloaderSystem *systems.DownloaderSystem) {

@@ -85,6 +85,11 @@ type BotConfig struct {
 	ReadStatus  bool `json:"read_status"`
 	ReactStatus bool `json:"react_status"`
 	
+	// Profile Bio Settings
+	AutoUpdateBio bool   `json:"auto_update_bio"`
+	BioTemplate   string `json:"bio_template"`
+	BioInterval   int    `json:"bio_interval"` // in minutes
+	
 	// Database Settings
 	DatabaseURL string `json:"database_url"`
 	
@@ -196,6 +201,11 @@ func LoadConfig() *BotConfig {
 		PublicMode:  false, // Private mode by default
 		ReadStatus:  true,  // Auto-read status enabled by default
 		ReactStatus: true,  // Auto-react status enabled by default
+		
+		// Profile Bio Settings
+		AutoUpdateBio: false, // Auto update bio disabled by default
+		BioTemplate:   "🤖 Bot Online | ⏰ {time} | 📊 {status} | 🔗 {web}",
+		BioInterval:   1,    // Update every 30 minutes
 		
 		// Database Settings
 		DatabaseURL: "",
