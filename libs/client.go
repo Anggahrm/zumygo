@@ -169,6 +169,40 @@ func (conn *IClient) SendDocument(from types.JID, data []byte, fileName string, 
 	return ok, nil
 }
 
+func (conn *IClient) SendAudio(from types.JID, data []byte, fileName string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(data) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("audio data is empty")
+	}
+	
+	uploaded, err := conn.WA.Upload(context.Background(), data, whatsmeow.MediaAudio)
+	if err != nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("failed to upload audio: %v", err)
+	}
+	
+	resultAudio := &waE2E.Message{
+		AudioMessage: &waE2E.AudioMessage{
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String("audio/mpeg"),
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			ContextInfo:   opts,
+		},
+	}
+	
+	ok, err := conn.WA.SendMessage(context.Background(), from, resultAudio)
+	if err != nil {
+		return whatsmeow.SendResponse{}, err
+	}
+	return ok, nil
+}
+
 func (conn *IClient) DeleteMsg(from types.JID, id string, me bool) error {
 	if conn.WA == nil {
 		return fmt.Errorf("client is not initialized")
@@ -262,6 +296,126 @@ func (conn *IClient) SendSticker(jid types.JID, data []byte, opts *waE2E.Context
 	}
 
 	return ok, nil
+}
+
+// MediaItem represents a single media item in an album
+type MediaItem struct {
+	Data     []byte
+	Type     string // "image", "video", "document"
+	Caption  string
+	FileName string // for documents
+}
+
+// SendMediaAlbum sends multiple media items as an album
+func (conn *IClient) SendMediaAlbum(from types.JID, mediaItems []MediaItem, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if conn.WA == nil {
+		return whatsmeow.SendResponse{}, fmt.Errorf("client is not initialized")
+	}
+	
+	if len(mediaItems) == 0 {
+		return whatsmeow.SendResponse{}, fmt.Errorf("no media items provided")
+	}
+	
+	if len(mediaItems) == 1 {
+		// If only one item, send as single media
+		item := mediaItems[0]
+		switch item.Type {
+		case "image":
+			return conn.SendImage(from, item.Data, item.Caption, opts)
+		case "video":
+			return conn.SendVideo(from, item.Data, item.Caption, opts)
+		case "document":
+			return conn.SendDocument(from, item.Data, item.FileName, item.Caption, opts)
+		default:
+			return whatsmeow.SendResponse{}, fmt.Errorf("unsupported media type: %s", item.Type)
+		}
+	}
+	
+	// For multiple items, we need to send them as separate messages but grouped
+	// WhatsApp doesn't have native album support like Whiskeysockets, but we can group them
+	var responses []whatsmeow.SendResponse
+	
+	for i, item := range mediaItems {
+		var response whatsmeow.SendResponse
+		var err error
+		
+		// Add context info to group messages
+		contextInfo := &waE2E.ContextInfo{}
+		if opts != nil {
+			contextInfo = opts
+		}
+		
+		switch item.Type {
+		case "image":
+			response, err = conn.SendImage(from, item.Data, item.Caption, contextInfo)
+		case "video":
+			response, err = conn.SendVideo(from, item.Data, item.Caption, contextInfo)
+		case "document":
+			response, err = conn.SendDocument(from, item.Data, item.FileName, item.Caption, contextInfo)
+		default:
+			return whatsmeow.SendResponse{}, fmt.Errorf("unsupported media type: %s", item.Type)
+		}
+		
+		if err != nil {
+			return whatsmeow.SendResponse{}, fmt.Errorf("failed to send media item %d: %v", i+1, err)
+		}
+		
+		responses = append(responses, response)
+	}
+	
+	// Return the first response (they should all be successful)
+	return responses[0], nil
+}
+
+// SendImageAlbum sends multiple images as an album
+func (conn *IClient) SendImageAlbum(from types.JID, images [][]byte, captions []string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if len(images) != len(captions) {
+		return whatsmeow.SendResponse{}, fmt.Errorf("number of images and captions must match")
+	}
+	
+	var mediaItems []MediaItem
+	for i, image := range images {
+		caption := ""
+		if i < len(captions) {
+			caption = captions[i]
+		}
+		
+		mediaItems = append(mediaItems, MediaItem{
+			Data:    image,
+			Type:    "image",
+			Caption: caption,
+		})
+	}
+	
+	return conn.SendMediaAlbum(from, mediaItems, opts)
+}
+
+// SendVideoAlbum sends multiple videos as an album
+func (conn *IClient) SendVideoAlbum(from types.JID, videos [][]byte, captions []string, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	if len(videos) != len(captions) {
+		return whatsmeow.SendResponse{}, fmt.Errorf("number of videos and captions must match")
+	}
+	
+	var mediaItems []MediaItem
+	for i, video := range videos {
+		caption := ""
+		if i < len(captions) {
+			caption = captions[i]
+		}
+		
+		mediaItems = append(mediaItems, MediaItem{
+			Data:    video,
+			Type:    "video",
+			Caption: caption,
+		})
+	}
+	
+	return conn.SendMediaAlbum(from, mediaItems, opts)
+}
+
+// SendMixedAlbum sends a mixed album with different types of media
+func (conn *IClient) SendMixedAlbum(from types.JID, mediaItems []MediaItem, opts *waE2E.ContextInfo) (whatsmeow.SendResponse, error) {
+	return conn.SendMediaAlbum(from, mediaItems, opts)
 }
 
 func (conn *IClient) GetBytes(url string) ([]byte, error) {

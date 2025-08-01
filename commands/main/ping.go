@@ -8,7 +8,7 @@ import (
 
 func init() {
 	libs.NewCommands(&libs.ICommand{
-		Name:     "(ping|p)",
+		Name:     "(ping)",
 		As:       []string{"ping"},
 		Tags:     "main",
 		IsPrefix: true,

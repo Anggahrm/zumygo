@@ -16,12 +16,6 @@ type User struct {
 	RegTime      int64     `json:"regTime"`
 	Registered   bool      `json:"registered"`
 	
-	// Economy
-	Money        int64     `json:"money"`
-	ZC           int64     `json:"zc"`           // ZumyCoin
-	ATM          int64     `json:"atm"`
-	Bank         int64     `json:"bank"`
-	
 	// Experience & Level
 	Exp          int64     `json:"exp"`
 	Level        int       `json:"level"`
@@ -38,9 +32,6 @@ type User struct {
 	BannedReason string    `json:"BannedReason"`
 	
 	// Activity
-	LastClaim    int64     `json:"lastclaim"`
-	LastRob      int64     `json:"lastrob"`
-	LastWork     int64     `json:"lastwork"`
 	LastPM       int64     `json:"lastpm"`
 	AFK          int64     `json:"afk"`
 	AFKReason    string    `json:"afkReason"`
@@ -49,48 +40,9 @@ type User struct {
 	Premium      bool      `json:"premium"`
 	PremiumTime  int64     `json:"premiumTime"`
 	PremiumDate  int64     `json:"premiumDate"`
-	
-	// Mining System
-	Mining       *MiningData `json:"mining,omitempty"`
-	
-	// Health System
-	Health       *HealthData `json:"health,omitempty"`
-	
-	// Inventory
-	Inventory    map[string]int64 `json:"inventory,omitempty"`
 }
 
-// MiningData represents user mining information
-type MiningData struct {
-	// Pickaxes
-	WoodenPickaxe int64 `json:"woodenPickaxe"`
-	StonePickaxe  int64 `json:"stonePickaxe"`
-	IronPickaxe   int64 `json:"ironPickaxe"`
-	GoldPickaxe   int64 `json:"goldPickaxe"`
-	DiamondPickaxe int64 `json:"diamondPickaxe"`
-	
-	// Ores
-	Coal        int64 `json:"coal"`
-	Iron        int64 `json:"iron"`
-	Gold        int64 `json:"gold"`
-	Diamond     int64 `json:"diamond"`
-	Emerald     int64 `json:"emerald"`
-	
-	// Mining Stats
-	LastMine    int64 `json:"lastMine"`
-	TotalMined  int64 `json:"totalMined"`
-	MiningLevel int   `json:"miningLevel"`
-	MiningExp   int64 `json:"miningExp"`
-}
 
-// HealthData represents user health information
-type HealthData struct {
-	Health         int64 `json:"health"`
-	MaxHealth      int64 `json:"maxHealth"`
-	LastRegenTime  int64 `json:"lastRegenTime"`
-	HealthPotions  int64 `json:"healthPotions"`
-	LastDamage     int64 `json:"lastDamage"`
-}
 
 // Chat represents a chat/group in the database
 type Chat struct {
@@ -117,9 +69,6 @@ type Chat struct {
 	LastActivity int64 `json:"lastActivity"`
 	MessageCount int64 `json:"messageCount"`
 	
-	// Economy
-	Economy     bool  `json:"economy"`
-	
 	// Games
 	Game        bool  `json:"game"`
 }
@@ -134,25 +83,7 @@ type Stats struct {
 }
 
 // OreStock represents ore market stock
-type OreStock struct {
-	Coal        int64   `json:"coal"`
-	Iron        int64   `json:"iron"`
-	Gold        int64   `json:"gold"`
-	Diamond     int64   `json:"diamond"`
-	Emerald     int64   `json:"emerald"`
-	LastUpdate  int64   `json:"lastUpdate"`
-	Prices      map[string]int64 `json:"prices"`
-}
 
-// PickaxeShop represents pickaxe shop stock
-type PickaxeShop struct {
-	WoodenPickaxe  int64 `json:"woodenPickaxe"`
-	StonePickaxe   int64 `json:"stonePickaxe"`
-	IronPickaxe    int64 `json:"ironPickaxe"`
-	GoldPickaxe    int64 `json:"goldPickaxe"`
-	DiamondPickaxe int64 `json:"diamondPickaxe"`
-	LastUpdate     int64 `json:"lastUpdate"`
-}
 
 // Database represents the main database structure
 type Database struct {
@@ -163,10 +94,7 @@ type Database struct {
 	Stickers           map[string]interface{} `json:"sticker"`
 	Settings           map[string]interface{} `json:"settings"`
 	Responses          map[string]interface{} `json:"respon"`
-	OreStock           []OreStock       `json:"oreStock"`
-	LastOreStockUpdate int64            `json:"lastOreStockUpdate"`
-	PickaxeShopStock   []PickaxeShop    `json:"pickaxeShopStock"`
-	LastPickaxeUpdate  int64            `json:"lastPickaxeShopUpdate"`
+
 	
 	// Internal
 	mutex    sync.RWMutex `json:"-"`
@@ -188,8 +116,7 @@ func InitDatabase(filename string) (*Database, error) {
 		Stickers:           make(map[string]interface{}),
 		Settings:           make(map[string]interface{}),
 		Responses:          make(map[string]interface{}),
-		OreStock:           []OreStock{},
-		PickaxeShopStock:   []PickaxeShop{},
+
 		filename:           filename,
 	}
 	
@@ -200,8 +127,7 @@ func InitDatabase(filename string) (*Database, error) {
 		}
 	}
 	
-	// Initialize default data if needed
-	DB.initializeDefaults()
+
 	
 	return DB, nil
 }
@@ -244,10 +170,6 @@ func (db *Database) GetUser(jid string) *User {
 			Age:         -1,
 			RegTime:     -1,
 			Registered:  false,
-			Money:       100,
-			ZC:          15,
-			ATM:         0,
-			Bank:        0,
 			Exp:         0,
 			Level:       0,
 			Role:        "Newbie ㋡",
@@ -257,18 +179,12 @@ func (db *Database) GetUser(jid string) *User {
 			Banned:      false,
 			BannedUser:  false,
 			BannedReason: "",
-			LastClaim:   0,
-			LastRob:     0,
-			LastWork:    0,
 			LastPM:      0,
 			AFK:         -1,
 			AFKReason:   "",
 			Premium:     false,
 			PremiumTime: 0,
 			PremiumDate: -1,
-			Mining:      db.initializeMiningData(),
-			Health:      db.initializeHealthData(),
-			Inventory:   make(map[string]int64),
 		}
 		db.Users[jid] = user
 		db.Stats.TotalUsers++
@@ -302,7 +218,6 @@ func (db *Database) GetChat(jid string) *Chat {
 			Viewonce:     true,
 			LastActivity: time.Now().Unix(),
 			MessageCount: 0,
-			Economy:      true,
 			Game:         true,
 		}
 		db.Chats[jid] = chat
@@ -312,74 +227,7 @@ func (db *Database) GetChat(jid string) *Chat {
 	return chat
 }
 
-// initializeMiningData creates initial mining data for a user
-func (db *Database) initializeMiningData() *MiningData {
-	return &MiningData{
-		WoodenPickaxe:  1, // Start with 1 wooden pickaxe
-		StonePickaxe:   0,
-		IronPickaxe:    0,
-		GoldPickaxe:    0,
-		DiamondPickaxe: 0,
-		Coal:           0,
-		Iron:           0,
-		Gold:           0,
-		Diamond:        0,
-		Emerald:        0,
-		LastMine:       0,
-		TotalMined:     0,
-		MiningLevel:    1,
-		MiningExp:      0,
-	}
-}
 
-// initializeHealthData creates initial health data for a user
-func (db *Database) initializeHealthData() *HealthData {
-	return &HealthData{
-		Health:        100,
-		MaxHealth:     100,
-		LastRegenTime: time.Now().Unix(),
-		HealthPotions: 0,
-		LastDamage:    0,
-	}
-}
-
-// initializeDefaults initializes default data
-func (db *Database) initializeDefaults() {
-	// Initialize ore stock if empty
-	if len(db.OreStock) == 0 {
-		db.OreStock = []OreStock{
-			{
-				Coal:       1000,
-				Iron:       500,
-				Gold:       200,
-				Diamond:    50,
-				Emerald:    25,
-				LastUpdate: time.Now().Unix(),
-				Prices: map[string]int64{
-					"coal":    10,
-					"iron":    25,
-					"gold":    100,
-					"diamond": 500,
-					"emerald": 1000,
-				},
-			},
-		}
-	}
-	
-	// Initialize pickaxe shop if empty
-	if len(db.PickaxeShopStock) == 0 {
-		db.PickaxeShopStock = []PickaxeShop{
-			{
-				WoodenPickaxe:  100,
-				StonePickaxe:   50,
-				IronPickaxe:    25,
-				GoldPickaxe:    10,
-				DiamondPickaxe: 5,
-				LastUpdate:     time.Now().Unix(),
-			},
-		}
-	}
-}
 
 // IncrementCommand increments command usage statistics
 func (db *Database) IncrementCommand(command string) {

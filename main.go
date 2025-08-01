@@ -12,10 +12,7 @@ import (
 var (
 	cfg            *config.BotConfig
 	db             *database.Database
-	miningSystem   *systems.MiningSystem
-	healthSystem   *systems.HealthSystem
-	economySystem  *systems.EconomySystem
-	levelingSystem *systems.LevelingSystem
+	downloaderSystem *systems.DownloaderSystem
 	logger         *helpers.Logger
 )
 
@@ -45,17 +42,9 @@ func main() {
 	db.AutoSave()
 
 	// Initialize all systems
-	miningSystem = systems.InitializeMiningSystem(db)
-	logger.Info("Mining system initialized successfully")
-	
-	healthSystem = systems.InitializeHealthSystem(db)
-	logger.Info("Health system initialized successfully")
-	
-	economySystem = systems.InitializeEconomySystem(db)
-	logger.Info("Economy system initialized successfully")
-	
-	levelingSystem = systems.InitializeLevelingSystem(db)
-	logger.Info("Leveling system initialized successfully")
+	downloaderSystem = systems.InitializeDownloaderSystem(cfg, db, logger)
+	systems.SetGlobalDownloaderSystem(downloaderSystem)
+	logger.Info("Downloader system initialized successfully")
 
 	// Print startup information
 	printStartupInfo()
@@ -73,28 +62,19 @@ func printStartupInfo() {
 	fmt.Printf("║ Owner: %-29s ║\n", cfg.NameOwner)
 	fmt.Printf("║ Prefix: %-28s ║\n", cfg.Prefix)
 	fmt.Printf("║ Database: %-26s ║\n", "✅ Active")
-	fmt.Printf("║ Mining System: %-21s ║\n", "✅ Active")
-	fmt.Printf("║ Health System: %-21s ║\n", "✅ Active")
-	fmt.Printf("║ Economy System: %-20s ║\n", "✅ Active")
-	fmt.Printf("║ Leveling System: %-19s ║\n", "✅ Active")
+
+	fmt.Printf("║ Downloader System: %-17s ║\n", "✅ Active")
 	fmt.Println("╚══════════════════════════════════════╝")
 	fmt.Println()
 	
 	// Show system features
 	fmt.Println("🎮 Available Features:")
-	fmt.Println("  ⛏️  Mining System - Mine ores and buy pickaxes")
-	fmt.Println("  ❤️  Health System - Manage HP and potions")
-	fmt.Println("  💰 Economy System - Work, shop, and trade")
-	fmt.Println("  ⭐ Leveling System - Gain XP and unlock roles")
+	fmt.Println("  📥 Downloader System - Download media from various platforms")
 	fmt.Println()
 	
 	// Show built-in commands count
 	builtinCommands := []string{
-		"mine", "mining", "pickaxeshop", "buypickaxe", "sellore",
-		"health", "usepotion", "potionshop", "buypotion", "upgradehealth",
-		"work", "daily", "shop", "buy", "inventory", "transfer", "rob", "deposit", "withdraw",
-		"level", "leaderboard", "roles", "autolevelup",
-		"balance", "stats", "toplevel", "topmoney", "tophealth",
+		// Commands are now auto-detected from the command system
 	}
 	fmt.Printf("⚡ Built-in commands: %d\n", len(builtinCommands))
 	fmt.Println()
@@ -110,24 +90,13 @@ func GetGlobalDatabase() *database.Database {
 	return db
 }
 
-// GetGlobalMiningSystem returns the global mining system
-func GetGlobalMiningSystem() *systems.MiningSystem {
-	return miningSystem
-}
 
-// GetGlobalHealthSystem returns the global health system
-func GetGlobalHealthSystem() *systems.HealthSystem {
-	return healthSystem
-}
 
-// GetGlobalEconomySystem returns the global economy system
-func GetGlobalEconomySystem() *systems.EconomySystem {
-	return economySystem
-}
 
-// GetGlobalLevelingSystem returns the global leveling system
-func GetGlobalLevelingSystem() *systems.LevelingSystem {
-	return levelingSystem
+
+// GetGlobalDownloaderSystem returns the global downloader system
+func GetGlobalDownloaderSystem() *systems.DownloaderSystem {
+	return downloaderSystem
 }
 
 // GetGlobalLogger returns the global logger

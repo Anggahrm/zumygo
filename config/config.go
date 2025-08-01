@@ -95,6 +95,11 @@ type BotConfig struct {
 
 var Config *BotConfig
 
+// GetConfig returns the global config instance
+func GetConfig() *BotConfig {
+	return Config
+}
+
 // LoadConfig loads configuration with static defaults
 func LoadConfig() *BotConfig {
 	config := &BotConfig{
@@ -179,7 +184,7 @@ func LoadConfig() *BotConfig {
 			"https://api.botcahx.eu.org":    "Mark-HDR",
 			"https://api-fgmods.ddns.net":   "798f2bf0",
 			"https://api-lolhuman.xyz":      "SGWN",
-			"https://api.betabotz.eu.org":   "zumyXD",
+			"https://api.betabotz.eu.org":   "anggagtg",
 		},
 		
 		// System Settings
