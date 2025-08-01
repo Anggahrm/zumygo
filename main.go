@@ -14,11 +14,17 @@ var (
 	db             *database.Database
 	downloaderSystem *systems.DownloaderSystem
 	logger         *helpers.Logger
+	performanceMonitor *helpers.PerformanceMonitor
 )
 
 func main() {
 	// Initialize logger
 	logger = &helpers.Logger{}
+	
+	// Initialize performance monitoring
+	performanceMonitor = helpers.GetPerformanceMonitor()
+	helpers.StartPerformanceMonitoring()
+	logger.Info("Performance monitoring started")
 	
 	// Load configuration
 	cfg = config.LoadConfig()
@@ -61,20 +67,24 @@ func printStartupInfo() {
 	fmt.Println("╔══════════════════════════════════════╗")
 	fmt.Printf("║            %s v2.0                ║\n", cfg.NameBot)
 	fmt.Println("║        Enhanced Go Edition           ║")
+	fmt.Println("║      🚀 Performance Optimized        ║")
 	fmt.Println("╠══════════════════════════════════════╣")
 	fmt.Printf("║ Owner: %-29s ║\n", cfg.NameOwner)
 	fmt.Printf("║ Prefix: %-28s ║\n", cfg.Prefix)
-	fmt.Printf("║ Database: %-26s ║\n", "✅ Active")
-
-	fmt.Printf("║ Downloader System: %-17s ║\n", "✅ Active")
-	fmt.Printf("║ Bio System: %-17s ║\n", "✅ Active")
+	fmt.Printf("║ Database: %-26s ║\n", "✅ Active (Optimized)")
+	fmt.Printf("║ Downloader System: %-17s ║\n", "✅ Active (Cached)")
+	fmt.Printf("║ Bio System: %-17s ║\n", "✅ Active (30min)")
+	fmt.Printf("║ Performance Monitor: %-15s ║\n", "✅ Active")
 	fmt.Println("╚══════════════════════════════════════╝")
 	fmt.Println()
 	
 	// Show system features
 	fmt.Println("🎮 Available Features:")
 	fmt.Println("  📥 Downloader System - Download media from various platforms")
-	fmt.Println("  📝 Bio System - Auto update profile bio")
+	fmt.Println("  📝 Bio System - Auto update profile bio (30min intervals)")
+	fmt.Println("  📊 Performance Monitor - Real-time system metrics")
+	fmt.Println("  💾 Database - Optimized with compression & caching")
+	fmt.Println("  🔄 Async Processing - Concurrent message handling")
 	fmt.Println()
 	
 	// Show built-in commands count
@@ -82,6 +92,16 @@ func printStartupInfo() {
 		// Commands are now auto-detected from the command system
 	}
 	fmt.Printf("⚡ Built-in commands: %d\n", len(builtinCommands))
+	fmt.Println()
+	
+	// Show performance optimizations
+	fmt.Println("🚀 Performance Optimizations:")
+	fmt.Println("  • Database compression & atomic saves")
+	fmt.Println("  • HTTP connection pooling & timeouts")
+	fmt.Println("  • Command regex caching")
+	fmt.Println("  • Async logging & message processing")
+	fmt.Println("  • Memory management & cleanup")
+	fmt.Println("  • Download result caching")
 	fmt.Println()
 }
 
@@ -95,18 +115,17 @@ func GetGlobalDatabase() *database.Database {
 	return db
 }
 
-
-
-
-
 // GetGlobalDownloaderSystem returns the global downloader system
 func GetGlobalDownloaderSystem() *systems.DownloaderSystem {
 	return downloaderSystem
 }
 
-
-
 // GetGlobalLogger returns the global logger
 func GetGlobalLogger() *helpers.Logger {
 	return logger
+}
+
+// GetGlobalPerformanceMonitor returns the global performance monitor
+func GetGlobalPerformanceMonitor() *helpers.PerformanceMonitor {
+	return performanceMonitor
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
+	"bytes"
+	"compress/gzip"
 )
 
 // User represents a user in the database
@@ -41,8 +43,6 @@ type User struct {
 	PremiumTime  int64     `json:"premiumTime"`
 	PremiumDate  int64     `json:"premiumDate"`
 }
-
-
 
 // Chat represents a chat/group in the database
 type Chat struct {
@@ -82,9 +82,6 @@ type Stats struct {
 	Commands      map[string]int64 `json:"commands"`
 }
 
-// OreStock represents ore market stock
-
-
 // Database represents the main database structure
 type Database struct {
 	Users              map[string]*User `json:"users"`
@@ -97,13 +94,19 @@ type Database struct {
 
 	
 	// Internal
-	mutex    sync.RWMutex `json:"-"`
-	filename string       `json:"-"`
+	mutex           sync.RWMutex `json:"-"`
+	filename        string       `json:"-"`
+	dirty           bool         `json:"-"` // Track if data has been modified
+	lastSave        time.Time    `json:"-"` // Track last save time
+	saveInterval    time.Duration `json:"-"` // Auto-save interval
+	maxUsers        int          `json:"-"` // Maximum number of users to keep in memory
+	maxChats        int          `json:"-"` // Maximum number of chats to keep in memory
+	cleanupInterval time.Duration `json:"-"` // Cleanup interval
 }
 
 var DB *Database
 
-// InitDatabase initializes the database
+// InitDatabase initializes the database with performance optimizations
 func InitDatabase(filename string) (*Database, error) {
 	DB = &Database{
 		Users:              make(map[string]*User),
@@ -117,7 +120,13 @@ func InitDatabase(filename string) (*Database, error) {
 		Settings:           make(map[string]interface{}),
 		Responses:          make(map[string]interface{}),
 
-		filename:           filename,
+		filename:        filename,
+		dirty:           false,
+		lastSave:        time.Now(),
+		saveInterval:    5 * time.Minute, // Save every 5 minutes instead of 30 seconds
+		maxUsers:        10000,           // Keep max 10k users in memory
+		maxChats:        1000,            // Keep max 1k chats in memory
+		cleanupInterval: 1 * time.Hour,   // Cleanup every hour
 	}
 	
 	// Load existing data if file exists
@@ -127,12 +136,10 @@ func InitDatabase(filename string) (*Database, error) {
 		}
 	}
 	
-
-	
 	return DB, nil
 }
 
-// Load loads the database from file
+// Load loads the database from file with compression support
 func (db *Database) Load() error {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
@@ -142,29 +149,77 @@ func (db *Database) Load() error {
 		return err
 	}
 	
+	// Try to decompress if it's gzipped
+	if len(data) > 2 && data[0] == 0x1f && data[1] == 0x8b {
+		reader, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		
+		var buf bytes.Buffer
+		if _, err := buf.ReadFrom(reader); err != nil {
+			return err
+		}
+		data = buf.Bytes()
+	}
+	
 	return json.Unmarshal(data, db)
 }
 
-// Save saves the database to file
+// Save saves the database to file with compression and performance optimizations
 func (db *Database) Save() error {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
+	
+	// Only save if data is dirty or enough time has passed
+	if !db.dirty && time.Since(db.lastSave) < db.saveInterval {
+		return nil
+	}
 	
 	data, err := json.MarshalIndent(db, "", "  ")
 	if err != nil {
 		return err
 	}
 	
-	return os.WriteFile(db.filename, data, 0644)
+	// Compress data to reduce file size
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(data); err != nil {
+		return err
+	}
+	if err := gw.Close(); err != nil {
+		return err
+	}
+	
+	// Write to temporary file first, then rename for atomic operation
+	tempFile := db.filename + ".tmp"
+	if err := os.WriteFile(tempFile, buf.Bytes(), 0644); err != nil {
+		return err
+	}
+	
+	if err := os.Rename(tempFile, db.filename); err != nil {
+		os.Remove(tempFile) // Clean up temp file
+		return err
+	}
+	
+	db.dirty = false
+	db.lastSave = time.Now()
+	return nil
 }
 
-// GetUser gets or creates a user
+// GetUser gets or creates a user with performance optimizations
 func (db *Database) GetUser(jid string) *User {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 	
 	user, exists := db.Users[jid]
 	if !exists {
+		// Check if we need to cleanup old users
+		if len(db.Users) >= db.maxUsers {
+			db.cleanupOldUsers()
+		}
+		
 		user = &User{
 			Name:        "",
 			Age:         -1,
@@ -188,18 +243,24 @@ func (db *Database) GetUser(jid string) *User {
 		}
 		db.Users[jid] = user
 		db.Stats.TotalUsers++
+		db.dirty = true
 	}
 	
 	return user
 }
 
-// GetChat gets or creates a chat
+// GetChat gets or creates a chat with performance optimizations
 func (db *Database) GetChat(jid string) *Chat {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 	
 	chat, exists := db.Chats[jid]
 	if !exists {
+		// Check if we need to cleanup old chats
+		if len(db.Chats) >= db.maxChats {
+			db.cleanupOldChats()
+		}
+		
 		chat = &Chat{
 			ID:           jid,
 			Name:         "",
@@ -222,12 +283,37 @@ func (db *Database) GetChat(jid string) *Chat {
 		}
 		db.Chats[jid] = chat
 		db.Stats.TotalChats++
+		db.dirty = true
 	}
 	
 	return chat
 }
 
+// cleanupOldUsers removes inactive users to free memory
+func (db *Database) cleanupOldUsers() {
+	now := time.Now().Unix()
+	cutoff := now - (30 * 24 * 60 * 60) // 30 days
+	
+	for jid, user := range db.Users {
+		if user.LastPM < cutoff && !user.Premium {
+			delete(db.Users, jid)
+			db.Stats.TotalUsers--
+		}
+	}
+}
 
+// cleanupOldChats removes inactive chats to free memory
+func (db *Database) cleanupOldChats() {
+	now := time.Now().Unix()
+	cutoff := now - (7 * 24 * 60 * 60) // 7 days
+	
+	for jid, chat := range db.Chats {
+		if chat.LastActivity < cutoff {
+			delete(db.Chats, jid)
+			db.Stats.TotalChats--
+		}
+	}
+}
 
 // IncrementCommand increments command usage statistics
 func (db *Database) IncrementCommand(command string) {
@@ -235,6 +321,7 @@ func (db *Database) IncrementCommand(command string) {
 	defer db.mutex.Unlock()
 	
 	db.Stats.Commands[command]++
+	db.dirty = true
 }
 
 // IncrementMessages increments total message count
@@ -243,6 +330,7 @@ func (db *Database) IncrementMessages() {
 	defer db.mutex.Unlock()
 	
 	db.Stats.TotalMessages++
+	db.dirty = true
 }
 
 // GetUptime returns bot uptime in seconds
@@ -250,16 +338,59 @@ func (db *Database) GetUptime() int64 {
 	return time.Now().Unix() - db.Stats.StartTime
 }
 
-// AutoSave starts automatic saving every 30 seconds
+// AutoSave starts automatic saving with improved performance
 func (db *Database) AutoSave() {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(db.saveInterval)
 		defer ticker.Stop()
 		
-		for range ticker.C {
-			if err := db.Save(); err != nil {
-				fmt.Printf("Error auto-saving database: %v\n", err)
+		cleanupTicker := time.NewTicker(db.cleanupInterval)
+		defer cleanupTicker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if err := db.Save(); err != nil {
+					fmt.Printf("Error auto-saving database: %v\n", err)
+				}
+			case <-cleanupTicker.C:
+				db.mutex.Lock()
+				db.cleanupOldUsers()
+				db.cleanupOldChats()
+				db.mutex.Unlock()
 			}
 		}
 	}()
+}
+
+// ForceSave forces an immediate save regardless of dirty flag
+func (db *Database) ForceSave() error {
+	db.mutex.Lock()
+	db.dirty = true
+	db.mutex.Unlock()
+	return db.Save()
+}
+
+// GetStats returns database statistics
+func (db *Database) GetStats() *Stats {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	
+	return db.Stats
+}
+
+// GetUserCount returns the number of users
+func (db *Database) GetUserCount() int {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	
+	return len(db.Users)
+}
+
+// GetChatCount returns the number of chats
+func (db *Database) GetChatCount() int {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	
+	return len(db.Chats)
 }

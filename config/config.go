@@ -205,7 +205,7 @@ func LoadConfig() *BotConfig {
 		// Profile Bio Settings
 		AutoUpdateBio: false, // Auto update bio disabled by default
 		BioTemplate:   "🤖 Bot Online | ⏰ {time} | 📊 {status} | 🔗 {web}",
-		BioInterval:   1,    // Update every 30 minutes
+		BioInterval:   30,   // Update every 30 minutes (changed from 1 minute)
 		
 		// Database Settings
 		DatabaseURL: "",

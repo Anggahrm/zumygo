@@ -224,6 +224,11 @@ func handleEnhancedMessage(evt *events.Message, conn *whatsmeow.Client, cfg *con
 	// Update database stats
 	db.IncrementMessages()
 	
+	// Update performance metrics
+	if monitor := GetGlobalPerformanceMonitor(); monitor != nil {
+		monitor.IncrementMessageCount()
+	}
+	
 	// Get or create user
 	user := db.GetUser(evt.Info.Sender.String())
 	chat := db.GetChat(evt.Info.Chat.String())
@@ -316,6 +321,11 @@ func handleEnhancedMessage(evt *events.Message, conn *whatsmeow.Client, cfg *con
 	
 	// Update command statistics
 	db.IncrementCommand(command)
+	
+	// Update performance metrics
+	if monitor := GetGlobalPerformanceMonitor(); monitor != nil {
+		monitor.IncrementCommandCount()
+	}
 }
 
 // handleBuiltinCommands handles built-in commands

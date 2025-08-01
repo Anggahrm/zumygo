@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"sync"
+	"context"
 	"zumygo/config"
 	"zumygo/database"
 	"zumygo/helpers"
@@ -21,6 +23,12 @@ type DownloaderSystem struct {
 	cfg    *config.BotConfig
 	db     *database.Database
 	logger *helpers.Logger
+	
+	// Performance optimizations
+	httpClient *http.Client
+	cache      map[string]*DownloadResult
+	cacheMutex sync.RWMutex
+	cacheTTL   time.Duration
 }
 
 // DownloadResult represents the result of a download operation
@@ -34,6 +42,7 @@ type DownloadResult struct {
 	Duration string `json:"duration"`
 	Views    string `json:"views"`
 	Error    string `json:"error,omitempty"`
+	CachedAt time.Time `json:"cached_at,omitempty"`
 }
 
 // VideoInfo represents video information
@@ -82,38 +91,111 @@ type SearchResponse struct {
 	} `json:"result"`
 }
 
-// InitializeDownloaderSystem creates a new downloader system
+// InitializeDownloaderSystem creates a new downloader system with performance optimizations
 func InitializeDownloaderSystem(cfg *config.BotConfig, db *database.Database, logger *helpers.Logger) *DownloaderSystem {
+	// Create optimized HTTP client with connection pooling
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  false,
+		DisableKeepAlives:   false,
+	}
+	
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second, // 30 second timeout
+	}
+	
 	return &DownloaderSystem{
-		cfg:    cfg,
-		db:     db,
-		logger: logger,
+		cfg:        cfg,
+		db:         db,
+		logger:     logger,
+		httpClient: client,
+		cache:      make(map[string]*DownloadResult),
+		cacheTTL:   10 * time.Minute, // Cache results for 10 minutes
 	}
 }
 
-// DownloadMedia handles downloading media from various platforms
+// getCachedResult retrieves cached download result
+func (ds *DownloaderSystem) getCachedResult(key string) (*DownloadResult, bool) {
+	ds.cacheMutex.RLock()
+	defer ds.cacheMutex.RUnlock()
+	
+	if result, exists := ds.cache[key]; exists {
+		if time.Since(result.CachedAt) < ds.cacheTTL {
+			return result, true
+		}
+		// Remove expired cache entry
+		delete(ds.cache, key)
+	}
+	return nil, false
+}
+
+// setCachedResult stores download result in cache
+func (ds *DownloaderSystem) setCachedResult(key string, result *DownloadResult) {
+	ds.cacheMutex.Lock()
+	defer ds.cacheMutex.Unlock()
+	
+	result.CachedAt = time.Now()
+	ds.cache[key] = result
+	
+	// Cleanup old cache entries if cache gets too large
+	if len(ds.cache) > 1000 {
+		ds.cleanupCache()
+	}
+}
+
+// cleanupCache removes old cache entries
+func (ds *DownloaderSystem) cleanupCache() {
+	cutoff := time.Now().Add(-ds.cacheTTL)
+	for key, result := range ds.cache {
+		if result.CachedAt.Before(cutoff) {
+			delete(ds.cache, key)
+		}
+	}
+}
+
+// DownloadMedia handles downloading media from various platforms with caching
 func (ds *DownloaderSystem) DownloadMedia(platform, url string) (*DownloadResult, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("%s:%s", platform, url)
+	if cached, exists := ds.getCachedResult(cacheKey); exists {
+		ds.logger.Info(fmt.Sprintf("Cache hit for %s: %s", platform, url))
+		return cached, nil
+	}
+	
 	ds.logger.Info(fmt.Sprintf("Starting download from %s: %s", platform, url))
+	
+	var result *DownloadResult
+	var err error
 	
 	switch strings.ToLower(platform) {
 	case "youtube", "yt":
-		return ds.downloadYouTube(url)
+		result, err = ds.downloadYouTube(url)
 	case "instagram", "ig":
-		return ds.downloadInstagram(url)
+		result, err = ds.downloadInstagram(url)
 	case "tiktok", "tt":
-		return ds.downloadTikTok(url)
+		result, err = ds.downloadTikTok(url)
 	case "facebook", "fb":
-		return ds.downloadFacebook(url)
+		result, err = ds.downloadFacebook(url)
 	case "twitter", "x":
-		return ds.downloadTwitter(url)
+		result, err = ds.downloadTwitter(url)
 	case "telegram":
-		return ds.downloadTelegram(url)
+		result, err = ds.downloadTelegram(url)
 	default:
-		return ds.downloadGeneric(url)
+		result, err = ds.downloadGeneric(url)
 	}
+	
+	// Cache the result
+	if result != nil {
+		ds.setCachedResult(cacheKey, result)
+	}
+	
+	return result, err
 }
 
-// downloadYouTube downloads YouTube videos/audio
+// downloadYouTube downloads YouTube videos/audio with optimized HTTP client
 func (ds *DownloaderSystem) downloadYouTube(videoURL string) (*DownloadResult, error) {
 	// Use betabotz API for audio download
 	encodedURL := url.QueryEscape(videoURL)
@@ -134,15 +216,13 @@ func (ds *DownloaderSystem) downloadYouTube(videoURL string) (*DownloadResult, e
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	// Don't set Accept-Encoding to avoid compression issues
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	
-	// Make API request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Make API request with optimized client
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch video info: %v", err)
 		ds.logger.Error(errorMsg)
@@ -159,8 +239,6 @@ func (ds *DownloaderSystem) downloadYouTube(videoURL string) (*DownloadResult, e
 	}
 	
 	ds.logger.Info(fmt.Sprintf("API Response: %s", string(bodyBytes)))
-	
-
 	
 	var result map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
@@ -254,13 +332,13 @@ func (ds *DownloaderSystem) downloadYouTube(videoURL string) (*DownloadResult, e
 	}, nil
 }
 
-// downloadInstagram downloads Instagram posts
+// downloadInstagram downloads Instagram posts with optimized client
 func (ds *DownloaderSystem) downloadInstagram(url string) (*DownloadResult, error) {
 	apiURL := ds.cfg.API("tio", "/api/instagram", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return &DownloadResult{Success: false, Error: "Failed to fetch Instagram data"}, err
 	}
@@ -286,7 +364,7 @@ func (ds *DownloaderSystem) downloadInstagram(url string) (*DownloadResult, erro
 	}, nil
 }
 
-// downloadTikTok downloads TikTok videos
+// downloadTikTok downloads TikTok videos with optimized client
 func (ds *DownloaderSystem) downloadTikTok(tiktokURL string) (*DownloadResult, error) {
 	// Use betabotz API for TikTok download
 	encodedURL := url.QueryEscape(tiktokURL)
@@ -307,15 +385,13 @@ func (ds *DownloaderSystem) downloadTikTok(tiktokURL string) (*DownloadResult, e
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	// Don't set Accept-Encoding to avoid compression issues
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	
-	// Make API request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Make API request with optimized client
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch TikTok data: %v", err)
 		ds.logger.Error(errorMsg)
@@ -413,13 +489,13 @@ func (ds *DownloaderSystem) downloadTikTok(tiktokURL string) (*DownloadResult, e
 	}, nil
 }
 
-// downloadFacebook downloads Facebook videos
+// downloadFacebook downloads Facebook videos with optimized client
 func (ds *DownloaderSystem) downloadFacebook(url string) (*DownloadResult, error) {
 	apiURL := ds.cfg.API("tio", "/api/facebook", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return &DownloadResult{Success: false, Error: "Failed to fetch Facebook data"}, err
 	}
@@ -444,13 +520,13 @@ func (ds *DownloaderSystem) downloadFacebook(url string) (*DownloadResult, error
 	}, nil
 }
 
-// downloadTwitter downloads Twitter/X videos
+// downloadTwitter downloads Twitter/X videos with optimized client
 func (ds *DownloaderSystem) downloadTwitter(url string) (*DownloadResult, error) {
 	apiURL := ds.cfg.API("tio", "/api/twitter", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return &DownloadResult{Success: false, Error: "Failed to fetch Twitter data"}, err
 	}
@@ -475,13 +551,13 @@ func (ds *DownloaderSystem) downloadTwitter(url string) (*DownloadResult, error)
 	}, nil
 }
 
-// downloadTelegram downloads Telegram media
+// downloadTelegram downloads Telegram media with optimized client
 func (ds *DownloaderSystem) downloadTelegram(url string) (*DownloadResult, error) {
 	apiURL := ds.cfg.API("tio", "/api/telegram", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return &DownloadResult{Success: false, Error: "Failed to fetch Telegram data"}, err
 	}
@@ -506,15 +582,23 @@ func (ds *DownloaderSystem) downloadTelegram(url string) (*DownloadResult, error
 	}, nil
 }
 
-// downloadGeneric handles generic URL downloads
+// downloadGeneric handles generic URL downloads with optimized client
 func (ds *DownloaderSystem) downloadGeneric(url string) (*DownloadResult, error) {
 	// Check if URL is valid
 	if !ds.isValidURL(url) {
 		return &DownloadResult{Success: false, Error: "Invalid URL"}, nil
 	}
 	
-	// Try to get file info
-	resp, err := http.Head(url)
+	// Try to get file info with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		return &DownloadResult{Success: false, Error: "Failed to create request"}, err
+	}
+	
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		return &DownloadResult{Success: false, Error: "Failed to access URL"}, err
 	}
@@ -531,7 +615,7 @@ func (ds *DownloaderSystem) downloadGeneric(url string) (*DownloadResult, error)
 	}, nil
 }
 
-// DownloadFile downloads a file from URL to local storage
+// DownloadFile downloads a file from URL to local storage with progress tracking
 func (ds *DownloaderSystem) DownloadFile(downloadURL, filename string) error {
 	// Create downloads directory if it doesn't exist
 	downloadsDir := "downloads"
@@ -546,8 +630,16 @@ func (ds *DownloaderSystem) DownloadFile(downloadURL, filename string) error {
 	
 	filepath := filepath.Join(downloadsDir, filename)
 	
-	// Download the file
-	resp, err := http.Get(downloadURL)
+	// Download the file with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
+	if err != nil {
+		return err
+	}
+	
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -563,7 +655,7 @@ func (ds *DownloaderSystem) DownloadFile(downloadURL, filename string) error {
 	return err
 }
 
-// GetVideoInfo gets information about a video
+// GetVideoInfo gets information about a video with caching
 func (ds *DownloaderSystem) GetVideoInfo(url string) (*VideoInfo, error) {
 	// Extract platform and get info
 	platform := ds.detectPlatform(url)
@@ -580,8 +672,27 @@ func (ds *DownloaderSystem) GetVideoInfo(url string) (*VideoInfo, error) {
 	}
 }
 
-// SearchYouTube searches for YouTube videos using betabotz API and returns first result
+// SearchYouTube searches for YouTube videos using betabotz API and returns first result with caching
 func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("search:%s", query)
+	if cached, exists := ds.getCachedResult(cacheKey); exists {
+		// Convert cached result to SearchResult
+		return &SearchResult{
+			VideoID:     cached.ID,
+			URL:         cached.URL,
+			Title:       cached.Title,
+			Description: "",
+			Thumbnail:   "",
+			Duration:    cached.Duration,
+			Published:   "",
+			Views:       0,
+			IsLive:      false,
+			Author:      "",
+			AuthorURL:   "",
+		}, nil
+	}
+	
 	// Build search API URL
 	searchURL := fmt.Sprintf("https://api.betabotz.eu.org/api/search/yts?query=%s&apikey=%s", 
 		url.QueryEscape(query), ds.cfg.APIKeys["https://api.betabotz.eu.org"])
@@ -601,9 +712,8 @@ func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	
-	// Make search API request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Make search API request with optimized client
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %v", err)
 	}
@@ -643,6 +753,16 @@ func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
 		AuthorURL:   firstResult.Author.URL,
 	}
 	
+	// Cache the result
+	cachedResult := &DownloadResult{
+		Success:  true,
+		URL:      searchResult.URL,
+		Title:    searchResult.Title,
+		ID:       searchResult.VideoID,
+		Duration: searchResult.Duration,
+	}
+	ds.setCachedResult(cacheKey, cachedResult)
+	
 	return searchResult, nil
 }
 
@@ -667,9 +787,8 @@ func (ds *DownloaderSystem) SearchYouTubeMultiple(query string) ([]*SearchResult
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	
-	// Make search API request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Make search API request with optimized client
+	resp, err := ds.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %v", err)
 	}
@@ -751,9 +870,8 @@ func (ds *DownloaderSystem) SearchYouTubeByURL(targetURL string) (*SearchResult,
 		req.Header.Set("Sec-Fetch-Mode", "cors")
 		req.Header.Set("Sec-Fetch-Site", "same-origin")
 		
-		// Make search API request
-		client := &http.Client{}
-		resp, err := client.Do(req)
+		// Make search API request with optimized client
+		resp, err := ds.httpClient.Do(req)
 		if err != nil {
 			continue
 		}
@@ -801,13 +919,13 @@ func (ds *DownloaderSystem) SearchYouTubeByURL(targetURL string) (*SearchResult,
 	return nil, fmt.Errorf("could not find matching video")
 }
 
-// getYouTubeInfo gets YouTube video information
+// getYouTubeInfo gets YouTube video information with optimized client
 func (ds *DownloaderSystem) getYouTubeInfo(url string) (*VideoInfo, error) {
 	apiURL := ds.cfg.API("tio", "/api/youtube/info", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -834,13 +952,13 @@ func (ds *DownloaderSystem) getYouTubeInfo(url string) (*VideoInfo, error) {
 	}, nil
 }
 
-// getTikTokInfo gets TikTok video information
+// getTikTokInfo gets TikTok video information with optimized client
 func (ds *DownloaderSystem) getTikTokInfo(url string) (*VideoInfo, error) {
 	apiURL := ds.cfg.API("lann", "/api/download/tiktok", map[string]string{
 		"url": url,
 	})
 	
-	resp, err := http.Get(apiURL)
+	resp, err := ds.httpClient.Get(apiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -943,6 +1061,32 @@ func (ds *DownloaderSystem) GetSupportedPlatforms() []string {
 		"Telegram (tg)",
 		"Generic URLs",
 	}
+}
+
+// ClearCache clears the download cache
+func (ds *DownloaderSystem) ClearCache() {
+	ds.cacheMutex.Lock()
+	defer ds.cacheMutex.Unlock()
+	
+	ds.cache = make(map[string]*DownloadResult)
+}
+
+// GetCacheStats returns cache statistics
+func (ds *DownloaderSystem) GetCacheStats() (int, int) {
+	ds.cacheMutex.RLock()
+	defer ds.cacheMutex.RUnlock()
+	
+	total := len(ds.cache)
+	expired := 0
+	cutoff := time.Now().Add(-ds.cacheTTL)
+	
+	for _, result := range ds.cache {
+		if result.CachedAt.Before(cutoff) {
+			expired++
+		}
+	}
+	
+	return total, expired
 }
 
 // Global downloader system instance
