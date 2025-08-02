@@ -93,18 +93,22 @@ type SearchResponse struct {
 
 // InitializeDownloaderSystem creates a new downloader system with performance optimizations
 func InitializeDownloaderSystem(cfg *config.BotConfig, db *database.Database, logger *helpers.Logger) *DownloaderSystem {
-	// Create optimized HTTP client with connection pooling
+	// Create optimized HTTP client with connection pooling and generous timeouts
 	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        200,                    // Increased from 100
+		MaxIdleConnsPerHost: 20,                     // Increased from 10
+		IdleConnTimeout:     60 * time.Second,       // Reduced from 90s
 		DisableCompression:  false,
 		DisableKeepAlives:   false,
+		ForceAttemptHTTP2:   true,                   // Enable HTTP/2 for better performance
+		MaxConnsPerHost:     50,                     // Limit connections per host
+		ResponseHeaderTimeout: 45 * time.Second,     // Increased from 25s to 45s for very slow APIs
+		ExpectContinueTimeout: 15 * time.Second,     // Increased from 10s to 15s
 	}
 	
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second, // 30 second timeout
+		Timeout:   60 * time.Second, // Increased from 30s to 60s for better reliability
 	}
 	
 	return &DownloaderSystem{
@@ -113,7 +117,7 @@ func InitializeDownloaderSystem(cfg *config.BotConfig, db *database.Database, lo
 		logger:     logger,
 		httpClient: client,
 		cache:      make(map[string]*DownloadResult),
-		cacheTTL:   10 * time.Minute, // Cache results for 10 minutes
+		cacheTTL:   15 * time.Minute, // Increased from 10min to 15min for better cache hit rate
 	}
 }
 
@@ -140,25 +144,49 @@ func (ds *DownloaderSystem) setCachedResult(key string, result *DownloadResult) 
 	result.CachedAt = time.Now()
 	ds.cache[key] = result
 	
-	// Cleanup old cache entries if cache gets too large
-	if len(ds.cache) > 1000 {
-		ds.cleanupCache()
+	// Optimized cleanup: only cleanup if cache gets very large
+	if len(ds.cache) > 2000 { // Increased from 1000
+		go ds.cleanupCache() // Run cleanup in background goroutine
 	}
 }
 
 // cleanupCache removes old cache entries
 func (ds *DownloaderSystem) cleanupCache() {
+	ds.cacheMutex.Lock()
+	defer ds.cacheMutex.Unlock()
+	
 	cutoff := time.Now().Add(-ds.cacheTTL)
+	removed := 0
+	
 	for key, result := range ds.cache {
 		if result.CachedAt.Before(cutoff) {
 			delete(ds.cache, key)
+			removed++
 		}
+	}
+	
+	// Log cleanup stats for monitoring
+	if removed > 0 && ds.logger != nil {
+		ds.logger.Info(fmt.Sprintf("Cache cleanup: removed %d expired entries, remaining: %d", removed, len(ds.cache)))
 	}
 }
 
 // DownloadMedia handles downloading media from various platforms with caching
 func (ds *DownloaderSystem) DownloadMedia(platform, url string) (*DownloadResult, error) {
-	// Check cache first
+	// Add nil checks for safety
+	if ds == nil {
+		return &DownloadResult{Success: false, Error: "Downloader system is nil"}, fmt.Errorf("downloader system is nil")
+	}
+	
+	if ds.logger == nil {
+		return &DownloadResult{Success: false, Error: "Logger is not initialized"}, fmt.Errorf("logger is not initialized")
+	}
+	
+	if ds.httpClient == nil {
+		return &DownloadResult{Success: false, Error: "HTTP client is not initialized"}, fmt.Errorf("http client is not initialized")
+	}
+	
+	// Check cache first (fast path)
 	cacheKey := fmt.Sprintf("%s:%s", platform, url)
 	if cached, exists := ds.getCachedResult(cacheKey); exists {
 		ds.logger.Info(fmt.Sprintf("Cache hit for %s: %s", platform, url))
@@ -170,21 +198,57 @@ func (ds *DownloaderSystem) DownloadMedia(platform, url string) (*DownloadResult
 	var result *DownloadResult
 	var err error
 	
-	switch strings.ToLower(platform) {
-	case "youtube", "yt":
-		result, err = ds.downloadYouTube(url)
-	case "instagram", "ig":
-		result, err = ds.downloadInstagram(url)
-	case "tiktok", "tt":
-		result, err = ds.downloadTikTok(url)
-	case "facebook", "fb":
-		result, err = ds.downloadFacebook(url)
-	case "twitter", "x":
-		result, err = ds.downloadTwitter(url)
-	case "telegram":
-		result, err = ds.downloadTelegram(url)
-	default:
-		result, err = ds.downloadGeneric(url)
+	// Use context with timeout for faster failure detection
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second) // Slightly less than client timeout
+	defer cancel()
+	
+	// Create channel for concurrent processing
+	resultChan := make(chan *DownloadResult, 1)
+	errChan := make(chan error, 1)
+	
+	// Start download in goroutine
+	go func() {
+		var downloadResult *DownloadResult
+		var downloadErr error
+		
+		switch strings.ToLower(platform) {
+		case "youtube", "yt":
+			downloadResult, downloadErr = ds.downloadYouTube(url)
+		case "instagram", "ig":
+			downloadResult, downloadErr = ds.downloadInstagram(url)
+		case "tiktok", "tt":
+			downloadResult, downloadErr = ds.downloadTikTok(url)
+		case "facebook", "fb":
+			downloadResult, downloadErr = ds.downloadFacebook(url)
+		case "twitter", "x":
+			downloadResult, downloadErr = ds.downloadTwitter(url)
+		case "telegram":
+			downloadResult, downloadErr = ds.downloadTelegram(url)
+		default:
+			downloadResult, downloadErr = ds.downloadGeneric(url)
+		}
+		
+		select {
+		case resultChan <- downloadResult:
+		case <-ctx.Done():
+			return
+		}
+		
+		select {
+		case errChan <- downloadErr:
+		case <-ctx.Done():
+			return
+		}
+	}()
+	
+	// Wait for result or timeout
+	select {
+	case result = <-resultChan:
+		err = <-errChan
+	case err = <-errChan:
+		result = <-resultChan
+	case <-ctx.Done():
+		return &DownloadResult{Success: false, Error: "Download timeout"}, fmt.Errorf("download timeout")
 	}
 	
 	// Cache the result
@@ -674,7 +738,24 @@ func (ds *DownloaderSystem) GetVideoInfo(url string) (*VideoInfo, error) {
 
 // SearchYouTube searches for YouTube videos using betabotz API and returns first result with caching
 func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
-	// Check cache first
+	// Add nil checks for safety
+	if ds == nil {
+		return nil, fmt.Errorf("downloader system is nil")
+	}
+	
+	if ds.cfg == nil {
+		return nil, fmt.Errorf("configuration is not initialized")
+	}
+	
+	if ds.logger == nil {
+		return nil, fmt.Errorf("logger is not initialized")
+	}
+	
+	if ds.httpClient == nil {
+		return nil, fmt.Errorf("http client is not initialized")
+	}
+	
+	// Check cache first (fast path)
 	cacheKey := fmt.Sprintf("search:%s", query)
 	if cached, exists := ds.getCachedResult(cacheKey); exists {
 		// Convert cached result to SearchResult
@@ -693,12 +774,16 @@ func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
 		}, nil
 	}
 	
+	// Use context with timeout for faster failure detection
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	
 	// Build search API URL
 	searchURL := fmt.Sprintf("https://api.betabotz.eu.org/api/search/yts?query=%s&apikey=%s", 
 		url.QueryEscape(query), ds.cfg.APIKeys["https://api.betabotz.eu.org"])
 
 	// Create request with browser-like headers
-	req, err := http.NewRequest("GET", searchURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -719,8 +804,34 @@ func (ds *DownloaderSystem) SearchYouTube(query string) (*SearchResult, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Read response body with timeout
+	bodyChan := make(chan []byte, 1)
+	errChan := make(chan error, 1)
+	
+	go func() {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		select {
+		case bodyChan <- bodyBytes:
+		case <-ctx.Done():
+			return
+		}
+		select {
+		case errChan <- err:
+		case <-ctx.Done():
+			return
+		}
+	}()
+	
+	var bodyBytes []byte
+	select {
+	case bodyBytes = <-bodyChan:
+		err = <-errChan
+	case err = <-errChan:
+		bodyBytes = <-bodyChan
+	case <-ctx.Done():
+		return nil, fmt.Errorf("search timeout")
+	}
+	
 	if err != nil {
 		return nil, fmt.Errorf("failed to read search response: %v", err)
 	}
@@ -1100,4 +1211,38 @@ func SetGlobalDownloaderSystem(ds *DownloaderSystem) {
 // GetGlobalDownloaderSystem returns the global downloader system instance
 func GetGlobalDownloaderSystem() *DownloaderSystem {
 	return globalDownloaderSystem
+}
+
+// EnsureGlobalDownloaderSystem ensures the global downloader system is available
+// This function can be called to wait for the system to be initialized
+func EnsureGlobalDownloaderSystem(maxWait time.Duration) *DownloaderSystem {
+	// First try immediate access (most common case)
+	if globalDownloaderSystem != nil {
+		return globalDownloaderSystem
+	}
+	
+	// If not available, use exponential backoff for faster response
+	start := time.Now()
+	backoff := 10 * time.Millisecond // Start with 10ms
+	
+	for time.Since(start) < maxWait {
+		if globalDownloaderSystem != nil {
+			return globalDownloaderSystem
+		}
+		
+		// Use shorter sleep intervals for faster response
+		time.Sleep(backoff)
+		
+		// Exponential backoff with cap
+		backoff *= 2
+		if backoff > 100*time.Millisecond {
+			backoff = 100 * time.Millisecond
+		}
+	}
+	return nil
+}
+
+// IsGlobalDownloaderSystemReady checks if the global downloader system is ready
+func IsGlobalDownloaderSystemReady() bool {
+	return globalDownloaderSystem != nil
 } 

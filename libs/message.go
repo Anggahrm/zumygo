@@ -132,6 +132,7 @@ func SerializeMessage(mess *events.Message, conn *IClient) *IMessage {
 		Media:      media,
 		Expiration: expiration,
 		Quoted:     quoted,
+		Client:     conn,
 		Reply: func(text string, opts ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
 			if conn == nil || conn.WA == nil {
 				fmt.Printf("ERROR: Client is not initialized for Reply\n")

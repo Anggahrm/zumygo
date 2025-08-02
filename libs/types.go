@@ -39,6 +39,7 @@ type IMessage struct {
 	IsMedia    string
 	Expiration uint32
 	Quoted     *waE2E.ContextInfo
+	Client     *IClient
 	Reply      func(text string, opts ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 	React      func(emoji string, opts ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 }

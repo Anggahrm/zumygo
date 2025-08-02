@@ -26,8 +26,14 @@ type IHandler struct {
 var (
 	commandCache     = make(map[string]*regexp.Regexp)
 	commandCacheMutex sync.RWMutex
-	messageQueue     = make(chan *libs.IMessage, 1000) // Buffer for concurrent processing
-	workerCount      = 5 // Number of worker goroutines
+	messageQueue     = make(chan *libs.IMessage, 2000) // Increased buffer for better throughput
+	workerCount      = 10 // Increased from 5 to 10 for better concurrency
+	processingStats  = struct {
+		sync.RWMutex
+		processed int64
+		cached    int64
+		errors    int64
+	}{}
 )
 
 func NewHandler(container *sqlstore.Container) *IHandler {
@@ -62,13 +68,32 @@ func processMessage(m *libs.IMessage, workerID int) {
 	// Add recovery mechanism for message processing
 	defer func() {
 		if r := recover(); r != nil {
+			processingStats.Lock()
+			processingStats.errors++
+			processingStats.Unlock()
 			fmt.Printf("Worker %d recovered from message processing panic: %v\n", workerID, r)
 		}
 	}()
 	
 	// Process the message
 	if m.Command != "" && libs.HasCommand(m.Command) {
-		ExecuteCommand(nil, m) // Pass nil for client as it's not needed in this context
+		start := time.Now()
+		// Get the client from the message's client field
+		var client *libs.IClient
+		if m.Client != nil {
+			client = m.Client
+		}
+		ExecuteCommand(client, m)
+		
+		// Update processing stats
+		processingStats.Lock()
+		processingStats.processed++
+		processingStats.Unlock()
+		
+		// Log slow commands for monitoring
+		if time.Since(start) > 5*time.Second {
+			fmt.Printf("Slow command detected: %s took %v\n", m.Command, time.Since(start))
+		}
 	}
 }
 
@@ -118,6 +143,7 @@ func (h *IHandler) RegisterHandler(conn *whatsmeow.Client) func(evt interface{})
 				}
 			}
 			return
+
 		case *events.Connected, *events.PushNameSetting:
 			if len(conn.Store.PushName) == 0 {
 				return
@@ -132,6 +158,9 @@ func getCachedRegex(pattern string) *regexp.Regexp {
 	commandCacheMutex.RLock()
 	if re, exists := commandCache[pattern]; exists {
 		commandCacheMutex.RUnlock()
+		processingStats.Lock()
+		processingStats.cached++
+		processingStats.Unlock()
 		return re
 	}
 	commandCacheMutex.RUnlock()
@@ -155,6 +184,12 @@ func getCachedRegex(pattern string) *regexp.Regexp {
 	}
 	
 	commandCache[pattern] = compiled
+	
+	// Cleanup cache if it gets too large
+	if len(commandCache) > 2000 { // Increased from 1000
+		go cleanupCommandCache()
+	}
+	
 	return compiled
 }
 
@@ -163,10 +198,12 @@ func cleanupCommandCache() {
 	commandCacheMutex.Lock()
 	defer commandCacheMutex.Unlock()
 	
-	// Keep only the most recent 1000 patterns
-	if len(commandCache) > 1000 {
+	// Keep only the most recent 1500 patterns (increased from 1000)
+	if len(commandCache) > 1500 {
 		// Simple cleanup: clear all and let them be recompiled as needed
+		// This is faster than selective cleanup for large caches
 		commandCache = make(map[string]*regexp.Regexp)
+		fmt.Printf("Command cache cleared, size was: %d\n", len(commandCache))
 	}
 }
 
@@ -195,7 +232,7 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 	
 	lists := libs.GetList()
 	
-	// Use a more efficient loop with early exit
+	// Use a more efficient loop with early exit and optimized matching
 	for _, cmd := range lists {
 		// Execute Before hook if exists
 		if cmd.Before != nil {
@@ -265,19 +302,31 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 					m.React("⏳")
 				}
 
-				// Execute command
-				ok := cmd.Execute(c, m)
-
-				// Handle wait indicator
-				if cmd.IsWait && !ok {
-					m.React("❌")
-				}
-
-				if cmd.IsWait && ok {
-					if c != nil && c.WA != nil {
-						c.WA.MarkRead([]string{m.Info.ID}, time.Now(), m.Info.Chat, m.Info.Sender)
+				// Execute command with timeout protection
+				done := make(chan bool, 1)
+				go func() {
+					ok := cmd.Execute(c, m)
+					done <- ok
+				}()
+				
+				// Wait for command completion with timeout
+				select {
+				case ok := <-done:
+					// Handle wait indicator
+					if cmd.IsWait && !ok {
+						m.React("❌")
 					}
-					m.React("")
+
+					if cmd.IsWait && ok {
+						if c != nil && c.WA != nil {
+							c.WA.MarkRead([]string{m.Info.ID}, time.Now(), m.Info.Chat, m.Info.Sender)
+						}
+						m.React("")
+					}
+				case <-time.After(60 * time.Second): // 60 second timeout for commands
+					fmt.Printf("Command timeout: %s\n", commandName)
+					m.React("⏰")
+					return
 				}
 				
 				// Return after executing command to avoid multiple executions
@@ -286,8 +335,9 @@ func ExecuteCommand(c *libs.IClient, m *libs.IMessage) {
 		}
 	}
 	
-	// Cleanup cache periodically
-	if time.Now().Unix()%1000 == 0 { // Every 1000th command
+	// Cleanup cache periodically (reduced frequency for better performance)
+	if time.Now().Unix()%2000 == 0 { // Every 2000th command instead of 1000th
 		go cleanupCommandCache()
 	}
 }
+

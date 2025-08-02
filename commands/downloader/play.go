@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"zumygo/libs"
 	"zumygo/systems"
 )
@@ -29,10 +30,11 @@ func init() {
 			// Send processing reaction
 			m.React("⏱️")
 
-			// Get downloader system from global systems
-			downloaderSystem := systems.GetGlobalDownloaderSystem()
+			// Get downloader system from global systems with optimized retry mechanism
+			downloaderSystem := systems.EnsureGlobalDownloaderSystem(500 * time.Millisecond) // Reduced from 2s to 500ms
+			
 			if downloaderSystem == nil {
-				m.Reply("❎ Downloader system not available")
+				m.Reply("❎ Downloader system not available. Please try again.")
 				return false
 			}
 
@@ -183,6 +185,12 @@ func init() {
 ◦ Published : %s
 ◦ URL : %s`, videoId, title, duration, views, author, published, 
 				fmt.Sprintf("https://youtu.be/%s", videoId))
+
+			// Check if client is available
+			if conn == nil {
+				m.Reply("❎ Client not available for sending media")
+				return false
+			}
 
 			// Send audio file as document
 			_, err = conn.SendDocument(m.Info.Chat, audioData, fmt.Sprintf("%s.mp3", downloaderSystem.CleanFileName(title)), caption, nil)

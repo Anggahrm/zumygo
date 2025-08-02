@@ -19,8 +19,8 @@ func performance(conn *libs.IClient, m *libs.IMessage) bool {
 
 func init() {
 	libs.NewCommands(&libs.ICommand{
-		Name:     "performance",
-		As:       []string{"performance", "perf", "stats"},
+		Name:     "(performance|perf|stats)",
+		As:       []string{"performance"},
 		Tags:     "main",
 		IsPrefix: true,
 		Execute:  performance,

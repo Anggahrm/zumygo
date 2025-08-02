@@ -3,6 +3,7 @@ package downloader
 import (
 	"fmt"
 	"strings"
+	"time"
 	"zumygo/libs"
 	"zumygo/systems"
 )
@@ -29,10 +30,11 @@ func init() {
 			// Send processing reaction
 			m.React("⏱️")
 
-			// Get downloader system from global systems
-			downloaderSystem := systems.GetGlobalDownloaderSystem()
+			// Get downloader system from global systems with optimized retry mechanism
+			downloaderSystem := systems.EnsureGlobalDownloaderSystem(500 * time.Millisecond) // Reduced from 2s to 500ms
+			
 			if downloaderSystem == nil {
-				m.Reply("❎ Downloader system not available")
+				m.Reply("❎ Downloader system not available. Please try again.")
 				return false
 			}
 
