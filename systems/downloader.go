@@ -33,16 +33,19 @@ type DownloaderSystem struct {
 
 // DownloadResult represents the result of a download operation
 type DownloadResult struct {
-	Success  bool   `json:"success"`
-	URL      string `json:"url"`
-	Title    string `json:"title"`
-	Size     string `json:"size"`
-	Type     string `json:"type"`
-	ID       string `json:"id"`
-	Duration string `json:"duration"`
-	Views    string `json:"views"`
-	Error    string `json:"error,omitempty"`
-	CachedAt time.Time `json:"cached_at,omitempty"`
+	Success   bool     `json:"success"`
+	URL       string   `json:"url"`
+	URLs      []string `json:"urls,omitempty"`      // For multiple videos (slides)
+	AudioURLs []string `json:"audio_urls,omitempty"` // For audio files in slides
+	Title     string   `json:"title"`
+	Size      string   `json:"size"`
+	Type      string   `json:"type"`
+	ID        string   `json:"id"`
+	Duration  string   `json:"duration"`
+	Views     string   `json:"views"`
+	Error     string   `json:"error,omitempty"`
+	CachedAt  time.Time `json:"cached_at,omitempty"`
+	IsSlide   bool      `json:"is_slide,omitempty"` // Indicates if this is a slide/video collection
 }
 
 // VideoInfo represents video information
@@ -526,16 +529,42 @@ func (ds *DownloaderSystem) downloadTikTok(tiktokURL string) (*DownloadResult, e
 		return &DownloadResult{Success: false, Error: errorMsg}, nil
 	}
 	
+	// Log video and audio counts for debugging
+	if videoArray, ok := resultData["video"].([]interface{}); ok {
+		ds.logger.Info(fmt.Sprintf("Found %d video URLs in response", len(videoArray)))
+	}
+	if audioArray, ok := resultData["audio"].([]interface{}); ok {
+		ds.logger.Info(fmt.Sprintf("Found %d audio URLs in response", len(audioArray)))
+	}
+	
 	// Extract data from betabotz API response
-	videoURL := ""
+	videoURLs := []string{}
+	isSlide := false
+	
+	// Handle video array (for slides)
 	if videoArray, ok := resultData["video"].([]interface{}); ok && len(videoArray) > 0 {
-		// Take the first video URL from the array
-		if firstVideo, ok := videoArray[0].(string); ok && firstVideo != "" {
-			videoURL = firstVideo
+		isSlide = len(videoArray) > 1
+		for _, videoItem := range videoArray {
+			if videoURL, ok := videoItem.(string); ok && videoURL != "" {
+				videoURLs = append(videoURLs, videoURL)
+			}
 		}
 	} else if video, ok := resultData["video"].(string); ok && video != "" {
 		// Fallback for single string
-		videoURL = video
+		videoURLs = append(videoURLs, video)
+	}
+	
+	// Handle audio array (for slides with audio)
+	audioURLs := []string{}
+	if audioArray, ok := resultData["audio"].([]interface{}); ok && len(audioArray) > 0 {
+		for _, audioItem := range audioArray {
+			if audioURL, ok := audioItem.(string); ok && audioURL != "" {
+				audioURLs = append(audioURLs, audioURL)
+			}
+		}
+	} else if audio, ok := resultData["audio"].(string); ok && audio != "" {
+		// Fallback for single string
+		audioURLs = append(audioURLs, audio)
 	}
 	
 	title := ""
@@ -545,11 +574,35 @@ func (ds *DownloaderSystem) downloadTikTok(tiktokURL string) (*DownloadResult, e
 		title = "TikTok Video"
 	}
 	
+	// If no videos found, return error
+	if len(videoURLs) == 0 {
+		return &DownloadResult{
+			Success: false,
+			Error:   "No video URLs found in response",
+		}, nil
+	}
+	
+	// For slides, return all URLs
+	if isSlide {
+		return &DownloadResult{
+			Success:   true,
+			URLs:      videoURLs,
+			AudioURLs: audioURLs,
+			Title:     title,
+			Type:      "video",
+			IsSlide:   true,
+		}, nil
+	}
+	
+	// For single video, return first URL in URL field for backward compatibility
 	return &DownloadResult{
-		Success: true,
-		URL:     videoURL,
-		Title:   title,
-		Type:    "video",
+		Success:   true,
+		URL:       videoURLs[0],
+		URLs:      videoURLs,
+		AudioURLs: audioURLs,
+		Title:     title,
+		Type:      "video",
+		IsSlide:   false,
 	}, nil
 }
 
